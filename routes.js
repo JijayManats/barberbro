@@ -117,8 +117,26 @@ QR payload: ${qrPayload}`;
     host,
     port,
     secure: port === 465,
+    requireTLS: true,
+    tls: {
+      rejectUnauthorized: false,
+    },
     auth: { user, pass },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
   });
+
+  try {
+    await transporter.verify();
+  } catch (verifyError) {
+    console.error("[member-card-email] SMTP verification failed:", verifyError.message);
+    return {
+      sent: false,
+      reason: "smtp-verification-failed",
+      error: verifyError.message,
+    };
+  }
 
   const html = `
     <div style="font-family: Arial, sans-serif; background: #f5efe7; padding: 24px; color: #171a2c;">
@@ -278,12 +296,18 @@ router.post("/customers/:id/activation-code", async (req, res) => {
     );
 
     const createdActivationCode = result.rows[0].code;
+    let emailResult = { sent: false, reason: "not-attempted" };
 
     try {
       if (customer.email) {
-        await sendMemberCardEmail(customer, createdActivationCode);
+        emailResult = await sendMemberCardEmail(customer, createdActivationCode);
       }
     } catch (emailError) {
+      emailResult = {
+        sent: false,
+        reason: "smtp-error",
+        error: emailError.message,
+      };
       console.warn("Customer card email failed:", emailError.message);
     }
 
@@ -293,7 +317,8 @@ router.post("/customers/:id/activation-code", async (req, res) => {
       expires_at: result.rows[0].expires_at,
       member_code: customer.member_code,
       email: customer.email,
-      email_sent: Boolean(customer.email),
+      email_sent: emailResult.sent,
+      email_error: emailResult.sent ? null : (emailResult.error || emailResult.reason || "email sending failed"),
     });
   } catch (error) {
     console.error("Activation code generation failed:", error.message);

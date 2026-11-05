@@ -136,8 +136,26 @@ QR payload: ${qrPayload}`;
     host,
     port,
     secure: port === 465,
+    requireTLS: true,
+    tls: {
+      rejectUnauthorized: false,
+    },
     auth: { user, pass },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
   });
+
+  try {
+    await transporter.verify();
+  } catch (verifyError) {
+    console.error("[member-card-email] SMTP verification failed:", verifyError.message);
+    return {
+      sent: false,
+      reason: "smtp-verification-failed",
+      error: verifyError.message,
+    };
+  }
 
   const html = `
     <div style="font-family: Arial, sans-serif; background: #f5efe7; padding: 24px; color: #171a2c;">
