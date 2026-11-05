@@ -108,6 +108,14 @@ function App() {
   const [newName, setNewName] = useState('')
   const [newPhone, setNewPhone] = useState('')
   const [newEmail, setNewEmail] = useState('')
+  const [barbers, setBarbers] = useState([])
+  const [barberForm, setBarberForm] = useState({ name: '', specialty: '' })
+  const [editingBarberId, setEditingBarberId] = useState(null)
+  const [barberModalOpen, setBarberModalOpen] = useState(false)
+  const [rewardTemplates, setRewardTemplates] = useState([])
+  const [rewardForm, setRewardForm] = useState({ name: '', description: '', required_stamps: 10 })
+  const [editingRewardId, setEditingRewardId] = useState(null)
+  const [rewardModalOpen, setRewardModalOpen] = useState(false)
 
   const logout = useCallback(() => {
     clearAdminToken()
@@ -126,15 +134,19 @@ function App() {
     setError('')
 
     try {
-      const [dashboard, customerRows, visitRows] = await Promise.all([
+      const [dashboard, customerRows, visitRows, barberRows, rewardRows] = await Promise.all([
         api.getDashboard(),
         api.getCustomers(),
         api.getVisits(),
+        api.getBarbers(),
+        api.getRewardTemplates(),
       ])
 
       setStats(dashboard)
       setCustomers(customerRows.map(normalizeCustomer))
       setVisits(visitRows.map(normalizeVisit))
+      setBarbers(Array.isArray(barberRows) ? barberRows : [])
+      setRewardTemplates(Array.isArray(rewardRows) ? rewardRows : [])
     } catch (err) {
       setError(err.message || 'Unable to load BarberBro data.')
     } finally {
@@ -290,7 +302,8 @@ function App() {
     }
   }
 
-  const eligible = customers.filter(c => c.stamps >= target).length
+  const rewardTarget = Number(rewardTemplates[0]?.required_stamps ?? target)
+  const eligible = customers.filter(c => c.stamps >= rewardTarget).length
 
   const filteredCustomers = customers.filter(c =>
     `${c.name} ${c.phone} ${c.memberCode}`
@@ -446,6 +459,148 @@ function App() {
     }
   }
 
+  function openBarberModal(barber = null) {
+    if (barber) {
+      setEditingBarberId(barber.id)
+      setBarberForm({ name: barber.name, specialty: barber.specialty || '' })
+    } else {
+      setEditingBarberId(null)
+      setBarberForm({ name: '', specialty: '' })
+    }
+    setBarberModalOpen(true)
+  }
+
+  async function saveBarber(event) {
+    event.preventDefault()
+    if (saving) return
+
+    const name = barberForm.name.trim()
+    if (!name) {
+      setError('Barber name is required.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      if (editingBarberId) {
+        await api.updateBarber(editingBarberId, barberForm)
+        setNotice('Barber updated successfully.')
+      } else {
+        await api.addBarber(barberForm)
+        setNotice('Barber added successfully.')
+      }
+
+      setBarberModalOpen(false)
+      setEditingBarberId(null)
+      setBarberForm({ name: '', specialty: '' })
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Failed to save barber.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function removeBarber(barber) {
+    if (!barber || saving) return
+
+    const confirmed = window.confirm(`Remove ${barber.name} from the barber list?`)
+    if (!confirmed) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await api.deleteBarber(barber.id)
+      setNotice(`${barber.name} has been removed.`)
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Failed to remove barber.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openRewardModal(reward = null) {
+    if (reward) {
+      setEditingRewardId(reward.id)
+      setRewardForm({
+        name: reward.name,
+        description: reward.description || '',
+        required_stamps: Number(reward.required_stamps || 10),
+      })
+    } else {
+      setEditingRewardId(null)
+      setRewardForm({ name: '', description: '', required_stamps: 10 })
+    }
+    setRewardModalOpen(true)
+  }
+
+  async function saveReward(event) {
+    event.preventDefault()
+    if (saving) return
+
+    const name = rewardForm.name.trim()
+    if (!name) {
+      setError('Reward name is required.')
+      return
+    }
+
+    const requiredStamps = Number(rewardForm.required_stamps)
+    if (!Number.isFinite(requiredStamps) || requiredStamps <= 0) {
+      setError('Required stamps must be a positive number.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      if (editingRewardId) {
+        await api.updateRewardTemplate(editingRewardId, rewardForm)
+        setNotice('Reward updated successfully.')
+      } else {
+        await api.addRewardTemplate(rewardForm)
+        setNotice('Reward added successfully.')
+      }
+
+      setRewardModalOpen(false)
+      setEditingRewardId(null)
+      setRewardForm({ name: '', description: '', required_stamps: 10 })
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Failed to save reward.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function removeReward(reward) {
+    if (!reward || saving) return
+
+    const confirmed = window.confirm(`Remove the ${reward.name} reward template?`)
+    if (!confirmed) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await api.deleteRewardTemplate(reward.id)
+      setNotice(`${reward.name} has been removed.`)
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Failed to remove reward.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (!token) {
     return (
       <div className="admin-app admin-login-shell">
@@ -511,6 +666,7 @@ function App() {
         {[
           ['Dashboard', '▦'],
           ['Customers', '♙'],
+          ['Barbers', '✂'],
           ['Visit History', '◷'],
           ['Rewards', '✦'],
         ].map(([page, icon]) => (
@@ -632,10 +788,39 @@ function App() {
           </>
         )}
 
+        {activePage === 'Barbers' && !loading && (
+          <section className="admin-panel">
+            <div className="admin-panel-heading">
+              <div><h2>Barber Directory</h2><p>Manage the barbers available for customer visits.</p></div>
+              <button className="admin-primary" onClick={() => openBarberModal()}>＋ Add Barber</button>
+            </div>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead><tr><th>NAME</th><th>SPECIALTY</th><th>ACTION</th></tr></thead>
+                <tbody>
+                  {barbers.map((barber) => (
+                    <tr key={barber.id}>
+                      <td><strong>{barber.name}</strong></td>
+                      <td>{barber.specialty || 'General barber'}</td>
+                      <td className="admin-actions">
+                        <div className="admin-action-stack">
+                          <button className="admin-action-button" onClick={() => openBarberModal(barber)}>Edit</button>
+                          <button className="admin-action-button admin-delete-button" onClick={() => removeBarber(barber)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {barbers.length === 0 && <p className="admin-empty">No barbers have been added yet.</p>}
+          </section>
+        )}
+
         {activePage === 'Customers' && !loading && (
           <section className="admin-panel">
             <div className="admin-panel-heading">
-              <div><h2>Customer Directory</h2><p>Find members and manage their visits.</p></div>
+              <div><h2>Customer Directory</h2><p>Find members and manage their accounts.</p></div>
               <div className="admin-action-group">
                 <button className="admin-outline" onClick={() => setQrScannerOpen(true)}>◉ Scan QR</button>
                 <button className="admin-primary" onClick={() => setShowAddCustomer(true)}>＋ Add Customer</button>
@@ -644,7 +829,7 @@ function App() {
             <SearchBox search={search} setSearch={setSearch} />
             <CustomerTable
               customers={filteredCustomers}
-              onRecord={recordVisit}
+              rewardTarget={rewardTarget}
               onRedeem={redeemReward}
               onCreateCode={createActivationCode}
               onDelete={deleteCustomer}
@@ -666,16 +851,45 @@ function App() {
         {activePage === 'Rewards' && !loading && (
           <section className="admin-panel">
             <div className="admin-panel-heading">
-              <div><h2>Loyalty Rewards</h2><p>Members qualify for a reward at {target} stamps.</p></div>
+              <div><h2>Loyalty Rewards</h2><p>Reward tiers available to your members.</p></div>
+              <button className="admin-primary" onClick={() => openRewardModal()}>＋ Add Reward</button>
             </div>
-            <CustomerTable
-              customers={customers.filter(c => c.stamps >= target)}
-              onRecord={recordVisit}
-              onRedeem={redeemReward}
-              onCreateCode={createActivationCode}
-              onDelete={deleteCustomer}
-            />
-            {eligible === 0 && <p className="admin-empty">No rewards are ready to redeem right now.</p>}
+
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead><tr><th>REWARD</th><th>REQUIRED STAMPS</th><th>DESCRIPTION</th><th>ACTION</th></tr></thead>
+                <tbody>
+                  {rewardTemplates.map((reward) => (
+                    <tr key={reward.id}>
+                      <td><strong>{reward.name}</strong></td>
+                      <td>{reward.required_stamps} stamps</td>
+                      <td>{reward.description || 'No description'}</td>
+                      <td className="admin-actions">
+                        <div className="admin-action-stack">
+                          <button className="admin-action-button" onClick={() => openRewardModal(reward)}>Edit</button>
+                          <button className="admin-action-button admin-delete-button" onClick={() => removeReward(reward)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {rewardTemplates.length === 0 && <p className="admin-empty">No reward templates have been created yet.</p>}
+
+            <div className="admin-panel" style={{ marginTop: 24 }}>
+              <div className="admin-panel-heading">
+                <div><h2>Eligible members</h2><p>Members that already meet the current reward threshold.</p></div>
+              </div>
+              <CustomerTable
+                customers={customers.filter(c => c.stamps >= rewardTarget)}
+                rewardTarget={rewardTarget}
+                onRedeem={redeemReward}
+                onCreateCode={createActivationCode}
+                onDelete={deleteCustomer}
+              />
+              {eligible === 0 && <p className="admin-empty">No rewards are ready to redeem right now.</p>}
+            </div>
           </section>
         )}
 
@@ -683,54 +897,6 @@ function App() {
           BarberBro Management System · Michael's Barbershop
         </footer>
       </main>
-
-      {selectedCustomer && (
-        <div className="admin-modal-backdrop" onClick={() => !saving && setSelectedCustomer(null)}>
-          <section className="admin-modal" onClick={e => e.stopPropagation()}>
-            <button className="admin-modal-close" disabled={saving} onClick={() => setSelectedCustomer(null)}>×</button>
-            <p className="admin-eyebrow">NEW TRANSACTION</p>
-            <h2>Record a Haircut</h2>
-            <p className="admin-modal-customer">{selectedCustomer.name} · {selectedCustomer.memberCode}</p>
-
-            <label>Service
-              <select value={service} onChange={e => {
-                setService(e.target.value)
-                setAmount(
-                  e.target.value === 'Haircut + Styling' ? '150' :
-                  e.target.value === 'Haircut + Shave' ? '180' : '100'
-                )
-              }}>
-                <option>Classic Haircut</option>
-                <option>Haircut + Styling</option>
-                <option>Haircut + Shave</option>
-              </select>
-            </label>
-
-            <label>Barber
-              <select value={barber} onChange={e => setBarber(e.target.value)}>
-                <option>Michael</option>
-                <option>Barber 01</option>
-                <option>Barber 02</option>
-                <option>Barber 03</option>
-                <option>Barber 04</option>
-                <option>Barber 05</option>
-              </select>
-            </label>
-
-            <label>Amount paid (₱)
-              <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
-            </label>
-
-            <div className="admin-modal-info">
-              Confirm only after the haircut is completed and payment has been recorded. One stamp will be added.
-            </div>
-
-            <button className="admin-primary admin-confirm" disabled={saving} onClick={confirmVisit}>
-              {saving ? 'Saving...' : 'Confirm Completed Haircut'}
-            </button>
-          </section>
-        </div>
-      )}
 
       {qrScannerOpen && (
         <div className="admin-modal-backdrop" onClick={() => setQrScannerOpen(false)}>
@@ -751,6 +917,54 @@ function App() {
             </div>
             {qrScanStatus && <p className="admin-login-error">{qrScanStatus}</p>}
           </div>
+        </div>
+      )}
+
+      {barberModalOpen && (
+        <div className="admin-modal-backdrop" onClick={() => !saving && setBarberModalOpen(false)}>
+          <form className="admin-modal" onSubmit={saveBarber} onClick={e => e.stopPropagation()}>
+            <button type="button" className="admin-modal-close" disabled={saving} onClick={() => setBarberModalOpen(false)}>×</button>
+            <p className="admin-eyebrow">STAFF</p>
+            <h2>{editingBarberId ? 'Edit Barber' : 'Add Barber'}</h2>
+
+            <label>Barber name
+              <input required maxLength="120" value={barberForm.name} onChange={e => setBarberForm((current) => ({ ...current, name: e.target.value }))} placeholder="Michael" />
+            </label>
+
+            <label>Specialty (optional)
+              <input maxLength="120" value={barberForm.specialty} onChange={e => setBarberForm((current) => ({ ...current, specialty: e.target.value }))} placeholder="Fade / Beard trim" />
+            </label>
+
+            <button className="admin-primary admin-confirm" type="submit" disabled={saving}>
+              {saving ? 'Saving...' : editingBarberId ? 'Update Barber' : 'Save Barber'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {rewardModalOpen && (
+        <div className="admin-modal-backdrop" onClick={() => !saving && setRewardModalOpen(false)}>
+          <form className="admin-modal" onSubmit={saveReward} onClick={e => e.stopPropagation()}>
+            <button type="button" className="admin-modal-close" disabled={saving} onClick={() => setRewardModalOpen(false)}>×</button>
+            <p className="admin-eyebrow">LOYALTY</p>
+            <h2>{editingRewardId ? 'Edit Reward' : 'Add Reward'}</h2>
+
+            <label>Reward name
+              <input required maxLength="120" value={rewardForm.name} onChange={e => setRewardForm((current) => ({ ...current, name: e.target.value }))} placeholder="Free haircut" />
+            </label>
+
+            <label>Required stamps
+              <input type="number" min="1" step="1" value={rewardForm.required_stamps} onChange={e => setRewardForm((current) => ({ ...current, required_stamps: e.target.value }))} />
+            </label>
+
+            <label>Description (optional)
+              <textarea rows="3" value={rewardForm.description} onChange={e => setRewardForm((current) => ({ ...current, description: e.target.value }))} placeholder="Reward description" />
+            </label>
+
+            <button className="admin-primary admin-confirm" type="submit" disabled={saving}>
+              {saving ? 'Saving...' : editingRewardId ? 'Update Reward' : 'Save Reward'}
+            </button>
+          </form>
         </div>
       )}
 
@@ -793,7 +1007,7 @@ function SearchBox({ search, setSearch }) {
   )
 }
 
-function CustomerTable({ customers, onRecord, onRedeem, onCreateCode, onDelete }) {
+function CustomerTable({ customers, rewardTarget, onRedeem, onCreateCode, onDelete }) {
   if (!customers.length) return <p className="admin-empty">No customers found.</p>
 
   return (
@@ -809,22 +1023,22 @@ function CustomerTable({ customers, onRecord, onRedeem, onCreateCode, onDelete }
               <td>{c.memberCode}</td>
               <td>{c.visits}</td>
               <td>
-                <div className="admin-progress"><span style={{ width: `${Math.min(c.stamps / target * 100, 100)}%` }} /></div>
-                <span className="admin-cell-sub">{c.stamps}/{target} stamps</span>
+                <div className="admin-progress"><span style={{ width: `${Math.min(c.stamps / (rewardTarget || 10) * 100, 100)}%` }} /></div>
+                <span className="admin-cell-sub">{c.stamps}/{rewardTarget || 10} stamps</span>
               </td>
               <td>
-                <span className={`admin-tag ${c.isActivated ? (c.stamps >= target ? 'ready' : 'active-tag') : 'active-tag'}`}>
-                  {c.isActivated ? (c.stamps >= target ? 'Reward ready' : 'Active') : 'Needs activation'}
+                <span className={`admin-tag ${c.isActivated ? (c.stamps >= (rewardTarget || 10) ? 'ready' : 'active-tag') : 'active-tag'}`}>
+                  {c.isActivated ? (c.stamps >= (rewardTarget || 10) ? 'Reward ready' : 'Active') : 'Needs activation'}
                 </span>
               </td>
               <td className="admin-actions">
                 <div className="admin-action-stack">
                 {!c.isActivated ? (
                   <button disabled={!onCreateCode} className="admin-action-button" onClick={() => onCreateCode(c)}>Generate code</button>
-                ) : c.stamps >= target ? (
+                ) : c.stamps >= (rewardTarget || 10) ? (
                   <button disabled={!onRedeem} className="admin-action-button reward-button" onClick={() => onRedeem(c)}>Redeem</button>
                 ) : (
-                  <button className="admin-action-button" onClick={() => onRecord(c)}>+ Visit</button>
+                  <span className="admin-cell-sub">Visit from customer app</span>
                 )}
                 {onDelete && (
                   <button className="admin-action-button admin-delete-button" onClick={() => onDelete(c)}>Delete</button>

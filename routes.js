@@ -76,6 +76,42 @@ function getCustomerDisplayName(customer) {
   return "Member";
 }
 
+function parseVisitQrPayload(rawPayload) {
+  const trimmed = String(rawPayload || "").trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const value = trimmed.startsWith("barberbro://") ? new URL(trimmed) : null;
+    if (!value && !trimmed.startsWith("barberbro://")) {
+      return null;
+    }
+
+    const pathname = value ? (value.pathname || "") : "";
+    const idMatch = pathname.match(/\/([0-9]+)(?:\/[^/]+)?$/);
+    const customerId = idMatch ? Number(idMatch[1]) : null;
+    const params = value ? value.searchParams : new URLSearchParams(trimmed.split("?")[1] || "");
+    const service = String(params.get("service") || "").trim();
+    const barber = String(params.get("barber") || params.get("barber_name") || "").trim();
+    const amount = Number(params.get("amount") || 0);
+
+    if (!customerId || !service || !barber || !Number.isFinite(amount) || amount < 0) {
+      return null;
+    }
+
+    return {
+      customer_id: customerId,
+      service,
+      barber_name: barber,
+      amount,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function sendMemberCardEmail(customer, activationCode) {
   if (!customer?.email) {
     return { sent: false, reason: "missing-email" };
@@ -184,6 +220,38 @@ QR payload: ${qrPayload}`;
   return { sent: true };
 }
 
+router.get("/barbers", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, specialty, is_active, created_at
+       FROM barbers
+       WHERE is_active = TRUE
+       ORDER BY name ASC`
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Barber list failed:", error.message);
+    res.status(500).json({ error: "Failed to load barbers" });
+  }
+});
+
+router.get("/reward-templates", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, required_stamps, description, is_active, created_at
+       FROM reward_templates
+       WHERE is_active = TRUE
+       ORDER BY required_stamps ASC, name ASC`
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Reward template load failed:", error.message);
+    res.status(500).json({ error: "Failed to load rewards" });
+  }
+});
+
 // All routes in this file require an authenticated admin.
 router.use(authenticateToken, requireAdmin);
 
@@ -203,6 +271,215 @@ router.get("/dashboard", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load dashboard statistics" });
+  }
+});
+
+router.get("/barbers/admin", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, specialty, is_active, created_at
+       FROM barbers
+       ORDER BY name ASC`
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Admin barber query failed:", error.message);
+    res.status(500).json({ error: "Failed to load barbers" });
+  }
+});
+
+router.post("/barbers", async (req, res) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const specialty = String(req.body?.specialty || "").trim();
+
+    if (!name) {
+      return res.status(400).json({ error: "Barber name is required" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO barbers (name, specialty)
+       VALUES ($1, $2)
+       RETURNING *`,
+      [name, specialty || null]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Barber create failed:", error.message);
+    res.status(500).json({ error: "Failed to add barber" });
+  }
+});
+
+router.put("/barbers/:id", async (req, res) => {
+  try {
+    const barberId = Number(req.params.id);
+    const name = String(req.body?.name || "").trim();
+    const specialty = String(req.body?.specialty || "").trim();
+
+    if (!Number.isInteger(barberId) || barberId <= 0) {
+      return res.status(400).json({ error: "Invalid barber ID" });
+    }
+
+    if (!name) {
+      return res.status(400).json({ error: "Barber name is required" });
+    }
+
+    const result = await pool.query(
+      `UPDATE barbers
+       SET name = $1,
+           specialty = $2
+       WHERE id = $3
+       RETURNING *`,
+      [name, specialty || null, barberId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Barber not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Barber update failed:", error.message);
+    res.status(500).json({ error: "Failed to update barber" });
+  }
+});
+
+router.delete("/barbers/:id", async (req, res) => {
+  try {
+    const barberId = Number(req.params.id);
+
+    if (!Number.isInteger(barberId) || barberId <= 0) {
+      return res.status(400).json({ error: "Invalid barber ID" });
+    }
+
+    const result = await pool.query(
+      `UPDATE barbers
+       SET is_active = FALSE
+       WHERE id = $1
+       RETURNING id` ,
+      [barberId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Barber not found" });
+    }
+
+    res.json({ message: "Barber removed successfully", barber_id: barberId });
+  } catch (error) {
+    console.error("Barber delete failed:", error.message);
+    res.status(500).json({ error: "Failed to delete barber" });
+  }
+});
+
+router.get("/reward-templates/admin", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, required_stamps, description, is_active, created_at
+       FROM reward_templates
+       ORDER BY required_stamps ASC, name ASC`
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Admin reward template query failed:", error.message);
+    res.status(500).json({ error: "Failed to load rewards" });
+  }
+});
+
+router.post("/reward-templates", async (req, res) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const description = String(req.body?.description || "").trim();
+    const requiredStamps = Number(req.body?.required_stamps ?? 10);
+
+    if (!name) {
+      return res.status(400).json({ error: "Reward name is required" });
+    }
+
+    if (!Number.isFinite(requiredStamps) || requiredStamps <= 0) {
+      return res.status(400).json({ error: "Required stamps must be a positive number" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO reward_templates (name, required_stamps, description)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [name, requiredStamps, description || null]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Reward template create failed:", error.message);
+    res.status(500).json({ error: "Failed to add reward" });
+  }
+});
+
+router.put("/reward-templates/:id", async (req, res) => {
+  try {
+    const templateId = Number(req.params.id);
+    const name = String(req.body?.name || "").trim();
+    const description = String(req.body?.description || "").trim();
+    const requiredStamps = Number(req.body?.required_stamps ?? 10);
+
+    if (!Number.isInteger(templateId) || templateId <= 0) {
+      return res.status(400).json({ error: "Invalid reward ID" });
+    }
+
+    if (!name) {
+      return res.status(400).json({ error: "Reward name is required" });
+    }
+
+    if (!Number.isFinite(requiredStamps) || requiredStamps <= 0) {
+      return res.status(400).json({ error: "Required stamps must be a positive number" });
+    }
+
+    const result = await pool.query(
+      `UPDATE reward_templates
+       SET name = $1,
+           required_stamps = $2,
+           description = $3
+       WHERE id = $4
+       RETURNING *`,
+      [name, requiredStamps, description || null, templateId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Reward not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Reward template update failed:", error.message);
+    res.status(500).json({ error: "Failed to update reward" });
+  }
+});
+
+router.delete("/reward-templates/:id", async (req, res) => {
+  try {
+    const templateId = Number(req.params.id);
+
+    if (!Number.isInteger(templateId) || templateId <= 0) {
+      return res.status(400).json({ error: "Invalid reward ID" });
+    }
+
+    const result = await pool.query(
+      `UPDATE reward_templates
+       SET is_active = FALSE
+       WHERE id = $1
+       RETURNING id`,
+      [templateId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Reward not found" });
+    }
+
+    res.json({ message: "Reward removed successfully", reward_id: templateId });
+  } catch (error) {
+    console.error("Reward template delete failed:", error.message);
+    res.status(500).json({ error: "Failed to delete reward" });
   }
 });
 

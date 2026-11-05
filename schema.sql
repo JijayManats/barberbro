@@ -12,6 +12,23 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS barbers (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(120) NOT NULL UNIQUE,
+    specialty VARCHAR(120),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS reward_templates (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(120) NOT NULL UNIQUE,
+    required_stamps INTEGER NOT NULL DEFAULT 10,
+    description TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS visits (
     id SERIAL PRIMARY KEY,
     customer_id INTEGER NOT NULL REFERENCES customers(id),

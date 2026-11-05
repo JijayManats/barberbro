@@ -8,8 +8,16 @@ require("dotenv").config();
 const apiRoutes = require("./routes");
 const authRoutes = require("./auth-routes");
 
+const pool = require("./db");
+
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
+
+async function initializeDatabase() {
+  const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
+  await pool.query(schema);
+  console.log("Database schema ready.");
+}
 
 console.log("=== BARBERBRO SERVER DIAGNOSTICS ===");
 console.log("Working directory:", process.cwd());
@@ -71,6 +79,13 @@ app.get("/", (req, res) => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`BarberBro backend running at http://localhost:${PORT}`);
-});
+initializeDatabase()
+  .then(() => {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`BarberBro backend running at http://localhost:${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error("Failed to initialize database schema:", error.message);
+    process.exit(1);
+  });

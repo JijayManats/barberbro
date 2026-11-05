@@ -76,6 +76,44 @@ export const api = {
 
   getVisits: () => request("/visits"),
 
+  getBarbers: () => request("/barbers/admin"),
+
+  addBarber: (barber) =>
+    request("/barbers", {
+      method: "POST",
+      body: JSON.stringify(barber),
+    }),
+
+  updateBarber: (barberId, barber) =>
+    request(`/barbers/${barberId}`, {
+      method: "PUT",
+      body: JSON.stringify(barber),
+    }),
+
+  deleteBarber: (barberId) =>
+    request(`/barbers/${barberId}`, {
+      method: "DELETE",
+    }),
+
+  getRewardTemplates: () => request("/reward-templates/admin"),
+
+  addRewardTemplate: (reward) =>
+    request("/reward-templates", {
+      method: "POST",
+      body: JSON.stringify(reward),
+    }),
+
+  updateRewardTemplate: (rewardId, reward) =>
+    request(`/reward-templates/${rewardId}`, {
+      method: "PUT",
+      body: JSON.stringify(reward),
+    }),
+
+  deleteRewardTemplate: (rewardId) =>
+    request(`/reward-templates/${rewardId}`, {
+      method: "DELETE",
+    }),
+
   recordVisit: (visit) =>
     request("/visits", {
       method: "POST",

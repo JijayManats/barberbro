@@ -52,6 +52,7 @@ function App() {
 
   const [customer, setCustomer] = useState(null)
   const [visits, setVisits] = useState([])
+  const [barbers, setBarbers] = useState([])
   const [dataLoading, setDataLoading] = useState(false)
   const [dataError, setDataError] = useState('')
 
@@ -97,6 +98,32 @@ function App() {
       })
       .catch(() => {
         if (active) setApiStatus('disconnected')
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    fetch(`${API_URL}/barbers`)
+      .then((response) => {
+        if (!response.ok) throw new Error('Unable to load barbers')
+        return response.json()
+      })
+      .then((rows) => {
+        if (!active) return
+        const loadedBarbers = Array.isArray(rows) && rows.length > 0 ? rows : [{ id: 1, name: 'Michael', specialty: 'General barber' }]
+        setBarbers(loadedBarbers)
+        setVisitBarber((current) => current || loadedBarbers[0]?.name || 'Michael')
+      })
+      .catch(() => {
+        if (active) {
+          setBarbers([{ id: 1, name: 'Michael', specialty: 'General barber' }])
+          setVisitBarber('Michael')
+        }
       })
 
     return () => {
@@ -691,12 +718,9 @@ function App() {
                       <label>
                         Barber
                         <select value={visitBarber} onChange={(event) => setVisitBarber(event.target.value)}>
-                          <option>Michael</option>
-                          <option>Barber 01</option>
-                          <option>Barber 02</option>
-                          <option>Barber 03</option>
-                          <option>Barber 04</option>
-                          <option>Barber 05</option>
+                          {barbers.length > 0 ? barbers.map((barber) => (
+                            <option key={barber.id} value={barber.name}>{barber.name}</option>
+                          )) : <option>Michael</option>}
                         </select>
                       </label>
                       <label>
