@@ -4,7 +4,7 @@ import QRCode from 'react-qr-code'
 import './App.css'
 
 const API_URL =
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+  import.meta.env.VITE_API_URL || 'https://barberbro-1.onrender.com/api'
 
 const menuItems = [
   { id: 'dashboard', icon: '▦', label: 'Dashboard' },
@@ -69,7 +69,7 @@ function App() {
   const apiRequest = useCallback(async (path, accessToken) => {
     const response = await fetch(`${API_URL}${path}`, {
       headers: {
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+                                ...( accessToken ? { Authorization: "Bearer " + accessToken } : {}),
         'Content-Type': 'application/json',
       },
     })
@@ -271,7 +271,11 @@ function App() {
   const totalSpent = Number(customer?.total_spent) || 0
   const stampsRequired = 10
   const stampsRemaining = Math.max(0, stampsRequired - stamps)
-  const displayName = customer?.full_name || 'BarberBro Member'
+  const displayName =
+    customer?.full_name ||
+    customer?.email?.split('@')[0]?.trim() ||
+    customer?.member_code ||
+    'BarberBro Member'
   const qrValue = customer
     ? `barberbro://member/${customer.id}/${encodeURIComponent(customer.member_code)}`
     : ''

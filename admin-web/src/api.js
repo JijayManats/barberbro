@@ -1,5 +1,5 @@
 const API_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+  import.meta.env.VITE_API_URL || "https://barberbro-1.onrender.com/api";
 
 const TOKEN_KEY = "barberbro_admin_token";
 
@@ -22,7 +22,7 @@ async function request(endpoint, options = {}) {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                  ...( token ? { Authorization: "Bearer " + token } : {}),
       ...options.headers,
     },
   });

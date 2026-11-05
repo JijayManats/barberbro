@@ -1,0 +1,5 @@
+﻿BarberBro Customer Release v1.0
+- Fixed native Android asset path issue by using relative web asset URLs
+- Uses deployed backend URL https://barberbro-1.onrender.com/api
+- Fresh rebuild after fixing Capacitor/Vite asset base
+- Uninstall old app before installing

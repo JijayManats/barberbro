@@ -25,6 +25,16 @@ function buildCustomerQrPayload(customer) {
   return `barberbro://member/${customerId}/${encodeURIComponent(memberCode)}`;
 }
 
+function getCustomerDisplayName(customer) {
+  const fullName = String(customer?.full_name || "").trim();
+  if (fullName) return fullName;
+
+  const emailName = String(customer?.email || "").split("@")[0]?.trim();
+  if (emailName) return emailName;
+
+  return "Member";
+}
+
 async function sendMemberCardEmail(customer, activationCode) {
   if (!customer?.email) {
     return { sent: false, reason: "missing-email" };
@@ -36,9 +46,11 @@ async function sendMemberCardEmail(customer, activationCode) {
   const pass = process.env.EMAIL_PASS;
   const from = process.env.EMAIL_FROM || user || "BarberBro <noreply@barberbro.local>";
 
+  const displayName = getCustomerDisplayName(customer);
+
   if (!host || !user || !pass) {
     const qrPayload = buildCustomerQrPayload(customer);
-    const preview = `Customer: ${customer.full_name}
+    const preview = `Customer: ${displayName}
 Member ID: ${customer.member_code}
 Activation code: ${activationCode}
 QR payload: ${qrPayload}`;
@@ -71,7 +83,7 @@ QR payload: ${qrPayload}`;
       <div style="max-width: 620px; margin: 0 auto; background: linear-gradient(135deg, #171a2c 0%, #241d38 100%); border-radius: 24px; overflow: hidden; box-shadow: 0 20px 40px rgba(23,26,44,0.18);">
         <div style="padding: 32px 28px 18px; color: #f3ebdf;">
           <div style="font-size: 12px; letter-spacing: 3px; text-transform: uppercase; opacity: 0.7;">BarberBro Loyalty</div>
-          <h1 style="margin: 10px 0 0; font-size: 32px;">Welcome, ${customer.full_name}</h1>
+          <h1 style="margin: 10px 0 0; font-size: 32px;">Welcome, ${getCustomerDisplayName(customer)}</h1>
         </div>
         <div style="padding: 0 28px 28px; background: #fffaf4; color: #171a2c;">
           <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding-top: 28px;">
@@ -188,7 +200,7 @@ router.post("/customers/:id/activation-code", async (req, res) => {
     }
 
     const customerResult = await pool.query(
-      `SELECT id, member_code, email, password_hash
+      `SELECT id, member_code, full_name, email, password_hash
        FROM customers
        WHERE id = $1`,
       [customerId]
