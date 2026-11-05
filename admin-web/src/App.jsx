@@ -136,6 +136,30 @@ function App() {
     }
   }, [logout, token])
 
+  const lookupCustomerByQr = useCallback(async (payload) => {
+    const trimmedPayload = String(payload || '').trim()
+
+    if (!trimmedPayload) {
+      setQrScanStatus('Scan or enter a customer QR code first.')
+      return
+    }
+
+    setQrScanStatus('Looking up member...')
+
+    try {
+      const customer = await api.lookupCustomerByQr(trimmedPayload)
+      setQrScanStatus('')
+      setQrScannerOpen(false)
+      setQrPasteValue('')
+      setSearch(customer.member_code)
+      setActivePage('Customers')
+      setNotice(`${customer.full_name} found via QR. Member ID: ${customer.member_code}`)
+      await loadData()
+    } catch (err) {
+      setQrScanStatus(err.message || 'No customer matched this QR code.')
+    }
+  }, [loadData])
+
   useEffect(() => {
     if (!qrScannerOpen) return undefined
 
@@ -198,30 +222,6 @@ function App() {
       setLoginLoading(false)
     }
   }
-
-  const lookupCustomerByQr = useCallback(async (payload) => {
-    const trimmedPayload = String(payload || '').trim()
-
-    if (!trimmedPayload) {
-      setQrScanStatus('Scan or enter a customer QR code first.')
-      return
-    }
-
-    setQrScanStatus('Looking up member...')
-
-    try {
-      const customer = await api.lookupCustomerByQr(trimmedPayload)
-      setQrScanStatus('')
-      setQrScannerOpen(false)
-      setQrPasteValue('')
-      setSearch(customer.member_code)
-      setActivePage('Customers')
-      setNotice(`${customer.full_name} found via QR. Member ID: ${customer.member_code}`)
-      await loadData()
-    } catch (err) {
-      setQrScanStatus(err.message || 'No customer matched this QR code.')
-    }
-  }, [loadData])
 
   const eligible = customers.filter(c => c.stamps >= target).length
 
