@@ -35,7 +35,7 @@ async function request(endpoint, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(data.error || "Something went wrong.");
+    throw new Error(data.error || "Something went wrong. Please try again.");
   }
 
   return data;
