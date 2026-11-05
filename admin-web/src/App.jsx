@@ -46,6 +46,38 @@ function normalizeVisit(v) {
   }
 }
 
+function parseVisitQrPayload(rawPayload) {
+  const trimmedPayload = String(rawPayload || '').trim()
+
+  if (!trimmedPayload || !trimmedPayload.startsWith('barberbro://visit/')) {
+    return null
+  }
+
+  try {
+    const parsedUrl = new URL(trimmedPayload)
+    const pathname = parsedUrl.pathname || ''
+    const match = pathname.match(/\/([0-9]+)\/[^/]+$/)
+    const customerId = match ? Number(match[1]) : null
+    const params = parsedUrl.searchParams
+    const service = String(params.get('service') || '').trim()
+    const barber = String(params.get('barber') || '').trim()
+    const amount = Number(params.get('amount') || 0)
+
+    if (!customerId || !service || !barber || !Number.isFinite(amount) || amount < 0) {
+      return null
+    }
+
+    return {
+      customer_id: customerId,
+      service,
+      barber_name: barber,
+      amount,
+    }
+  } catch {
+    return null
+  }
+}
+
 function App() {
   const [token, setToken] = useState(() => getAdminToken())
   const [email, setEmail] = useState('')
@@ -136,11 +168,46 @@ function App() {
     }
   }, [logout, token])
 
+  const recordVisitFromQr = useCallback(async (payload) => {
+    const visitPayload = parseVisitQrPayload(payload)
+
+    if (!visitPayload) {
+      setQrScanStatus('This QR is not a valid BarberBro visit ticket.')
+      return
+    }
+
+    setQrScanStatus('Recording visit from QR...')
+
+    try {
+      const response = await api.recordVisit({
+        customer_id: visitPayload.customer_id,
+        service: visitPayload.service,
+        barber_name: visitPayload.barber_name,
+        amount: Number(visitPayload.amount),
+      })
+
+      setQrScanStatus('')
+      setQrScannerOpen(false)
+      setQrPasteValue('')
+      setNotice(`Visit recorded for ${visitPayload.service} by ${visitPayload.barber_name}.`)
+      await loadData()
+      return response
+    } catch (err) {
+      setQrScanStatus(err.message || 'Unable to record the visit from this QR code.')
+      return null
+    }
+  }, [loadData])
+
   const lookupCustomerByQr = useCallback(async (payload) => {
     const trimmedPayload = String(payload || '').trim()
 
     if (!trimmedPayload) {
       setQrScanStatus('Scan or enter a customer QR code first.')
+      return
+    }
+
+    if (trimmedPayload.startsWith('barberbro://visit/')) {
+      await recordVisitFromQr(trimmedPayload)
       return
     }
 
@@ -158,7 +225,7 @@ function App() {
     } catch (err) {
       setQrScanStatus(err.message || 'No customer matched this QR code.')
     }
-  }, [loadData])
+  }, [loadData, recordVisitFromQr])
 
   useEffect(() => {
     if (!qrScannerOpen) return undefined
@@ -355,6 +422,30 @@ function App() {
     }
   }
 
+  async function deleteCustomer(customer) {
+    if (!customer || saving) return
+
+    const confirmed = window.confirm(
+      `Delete ${customer.name} (${customer.memberCode})? This will remove the customer record and all related visit history.`
+    )
+
+    if (!confirmed) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await api.deleteCustomer(customer.id)
+      setNotice(`${customer.name} has been deleted from the system.`)
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Failed to delete customer.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (!token) {
     return (
       <div className="admin-app admin-login-shell">
@@ -527,6 +618,7 @@ function App() {
                 onRecord={recordVisit}
                 onRedeem={redeemReward}
                 onCreateCode={createActivationCode}
+                onDelete={deleteCustomer}
               />
             </section>
 
@@ -555,6 +647,7 @@ function App() {
               onRecord={recordVisit}
               onRedeem={redeemReward}
               onCreateCode={createActivationCode}
+              onDelete={deleteCustomer}
             />
             <p className="admin-demo-note">Customer records are stored in your database.</p>
           </section>
@@ -580,6 +673,7 @@ function App() {
               onRecord={recordVisit}
               onRedeem={redeemReward}
               onCreateCode={createActivationCode}
+              onDelete={deleteCustomer}
             />
             {eligible === 0 && <p className="admin-empty">No rewards are ready to redeem right now.</p>}
           </section>
@@ -699,7 +793,7 @@ function SearchBox({ search, setSearch }) {
   )
 }
 
-function CustomerTable({ customers, onRecord, onRedeem, onCreateCode }) {
+function CustomerTable({ customers, onRecord, onRedeem, onCreateCode, onDelete }) {
   if (!customers.length) return <p className="admin-empty">No customers found.</p>
 
   return (
@@ -724,6 +818,7 @@ function CustomerTable({ customers, onRecord, onRedeem, onCreateCode }) {
                 </span>
               </td>
               <td className="admin-actions">
+                <div className="admin-action-stack">
                 {!c.isActivated ? (
                   <button disabled={!onCreateCode} className="admin-action-button" onClick={() => onCreateCode(c)}>Generate code</button>
                 ) : c.stamps >= target ? (
@@ -731,6 +826,10 @@ function CustomerTable({ customers, onRecord, onRedeem, onCreateCode }) {
                 ) : (
                   <button className="admin-action-button" onClick={() => onRecord(c)}>+ Visit</button>
                 )}
+                {onDelete && (
+                  <button className="admin-action-button admin-delete-button" onClick={() => onDelete(c)}>Delete</button>
+                )}
+                </div>
               </td>
             </tr>
           ))}

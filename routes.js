@@ -25,6 +25,38 @@ function buildCustomerQrPayload(customer) {
   return `barberbro://member/${customerId}/${encodeURIComponent(memberCode)}`;
 }
 
+function parseQrLookupPayload(rawPayload) {
+  const trimmed = String(rawPayload || "").trim();
+
+  if (!trimmed) {
+    return { id: null, memberCode: "" };
+  }
+
+  if (trimmed.startsWith("barberbro://member/")) {
+    const match = trimmed.match(/^barberbro:\/\/member\/(?:(\d+)\/)?(.+)$/i);
+    if (!match) {
+      return { id: null, memberCode: "" };
+    }
+
+    const parsedId = Number(match[1]);
+    return {
+      id: Number.isFinite(parsedId) && parsedId > 0 ? parsedId : null,
+      memberCode: decodeURIComponent(match[2] || "").trim(),
+    };
+  }
+
+  const queryMatch = trimmed.match(/[?&](?:member_code|memberCode)=([^&]+)/i);
+  if (queryMatch) {
+    return { id: null, memberCode: decodeURIComponent(queryMatch[1]).trim() };
+  }
+
+  if (/^\d+$/.test(trimmed)) {
+    return { id: Number(trimmed), memberCode: "" };
+  }
+
+  return { id: null, memberCode: trimmed.replace(/^member\//i, "").trim() };
+}
+
 function buildCustomerQrImageUrl(customer) {
   const qrPayload = buildCustomerQrPayload(customer);
   if (!qrPayload) {
@@ -56,11 +88,12 @@ async function sendMemberCardEmail(customer, activationCode) {
   const from = process.env.EMAIL_FROM || user || "BarberBro <noreply@barberbro.local>";
 
   const displayName = getCustomerDisplayName(customer);
+  const qrPayload = buildCustomerQrPayload(customer);
+  const memberId = String(customer?.member_code || "").toUpperCase();
 
   if (!host || !user || !pass) {
-    const qrPayload = buildCustomerQrPayload(customer);
     const preview = `Customer: ${displayName}
-Member ID: ${customer.member_code}
+Member ID: ${memberId}
 Activation code: ${activationCode}
 QR payload: ${qrPayload}`;
     console.log("[member-card-demo]", preview);
@@ -69,8 +102,16 @@ QR payload: ${qrPayload}`;
 
   const nodemailer = require("nodemailer");
   const QRCode = require("qrcode");
-  const qrPayload = buildCustomerQrPayload(customer);
-  const qrImage = buildCustomerQrImageUrl(customer);
+  const qrImage = qrPayload
+    ? await QRCode.toDataURL(qrPayload, {
+        width: 220,
+        margin: 1,
+        color: {
+          dark: "#171a2c",
+          light: "#fffaf4",
+        },
+      })
+    : "";
 
   const transporter = nodemailer.createTransport({
     host,
@@ -84,32 +125,41 @@ QR payload: ${qrPayload}`;
       <div style="max-width: 620px; margin: 0 auto; background: linear-gradient(135deg, #171a2c 0%, #241d38 100%); border-radius: 24px; overflow: hidden; box-shadow: 0 20px 40px rgba(23,26,44,0.18);">
         <div style="padding: 32px 28px 18px; color: #f3ebdf;">
           <div style="font-size: 12px; letter-spacing: 3px; text-transform: uppercase; opacity: 0.7;">BarberBro Loyalty</div>
-          <h1 style="margin: 10px 0 0; font-size: 32px;">Welcome, ${getCustomerDisplayName(customer)}</h1>
+          <h1 style="margin: 10px 0 0; font-size: 32px;">Welcome, ${displayName}</h1>
         </div>
         <div style="padding: 0 28px 28px; background: #fffaf4; color: #171a2c;">
           <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding-top: 28px;">
-            <div style="background: linear-gradient(135deg, #f3cf6b 0%, #dba95a 100%); border-radius: 18px; padding: 18px; text-align: center; min-width: 220px;">
+            <div style="background: linear-gradient(135deg, #f3cf6b 0%, #dba95a 100%); border-radius: 18px; padding: 18px; text-align: center; min-width: 220px; min-height: 220px; display: flex; align-items: center; justify-content: center;">
               ${qrImage ? `<img src="${qrImage}" alt="BarberBro member QR code" style="display: block; width: 180px; height: 180px; margin: 0 auto; background: white; border-radius: 16px; padding: 8px;" />` : `<div style="display:block;width:180px;height:180px;border-radius:16px;background:#f3efe9;display:flex;align-items:center;justify-content:center;color:#171a2c;font-weight:700;">QR</div>`}
             </div>
             <div>
               <div style="font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #5a5447;">Member ID</div>
-              <div style="font-size: 30px; font-weight: 800; margin-top: 8px; letter-spacing: 1px;">${customer.member_code}</div>
-              <div style="margin-top: 14px; padding: 12px 14px; background: #efe8d8; border-radius: 12px;">
+              <div style="font-size: 30px; font-weight: 800; margin-top: 8px; letter-spacing: 1px;">${memberId}</div>
+              <div style="margin-top: 16px; padding: 12px 14px; background: #efe8d8; border-radius: 12px;">
                 <div style="font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #5a5447;">Activation code</div>
                 <div style="font-size: 24px; font-weight: 800; margin-top: 7px;">${activationCode}</div>
               </div>
             </div>
           </div>
-          <div style="margin-top: 20px; font-size: 14px; line-height: 1.7; color: #4b4b4b;">Use your member ID and activation code on the BarberBro customer app to finish setting up your account. Keep this email handy — your QR card is also your quick check-in ID.</div>
+          <div style="margin-top: 20px; border-top: 1px solid #e4ddcf; padding-top: 18px; font-size: 14px; line-height: 1.7; color: #4b4b4b;">
+            <div style="font-weight: 700; color: #171a2c; margin-bottom: 6px;">Quick setup details</div>
+            <div>Member ID: <strong>${memberId}</strong></div>
+            <div>Activation code: <strong>${activationCode}</strong></div>
+            <div>QR payload: <strong>${qrPayload || "Unavailable"}</strong></div>
+          </div>
+          <div style="margin-top: 18px; font-size: 14px; line-height: 1.7; color: #4b4b4b;">Use your member ID and activation code on the BarberBro customer app to finish setting up your account. Keep this email handy — your QR card is also your quick check-in ID.</div>
         </div>
       </div>
     </div>
   `;
 
+  const text = `Welcome, ${displayName}\n\nMember ID: ${memberId}\nActivation code: ${activationCode}\nQR payload: ${qrPayload || "Unavailable"}\n\nUse your member ID and activation code on the BarberBro customer app to finish setting up your account.`;
+
   await transporter.sendMail({
     from,
     to: customer.email,
     subject: "Your BarberBro member card and activation code",
+    text,
     html,
   });
 
@@ -261,9 +311,9 @@ router.post("/customers/lookup", async (req, res) => {
       ? req.body.member_code.trim().toUpperCase()
       : "";
 
-    const patternMatch = qrPayload.match(/barberbro:\/\/member\/(\d+)\/(.+)$/i);
-    const lookupId = patternMatch ? Number(patternMatch[1]) : null;
-    const lookupMemberCode = patternMatch ? decodeURIComponent(patternMatch[2]) : memberCode;
+    const parsedQr = parseQrLookupPayload(qrPayload || memberCode);
+    const lookupId = parsedQr.id;
+    const lookupMemberCode = parsedQr.memberCode || memberCode;
 
     if (!lookupId && !lookupMemberCode) {
       return res.status(400).json({ error: "A member QR payload or member code is required." });
@@ -291,6 +341,44 @@ router.post("/customers/lookup", async (req, res) => {
   } catch (error) {
     console.error("Customer QR lookup failed:", error.message);
     res.status(500).json({ error: "Failed to find customer by QR" });
+  }
+});
+
+router.delete("/customers/:id", async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const customerId = Number(req.params.id);
+
+    if (!Number.isInteger(customerId) || customerId <= 0) {
+      return res.status(400).json({ error: "Invalid customer ID" });
+    }
+
+    await client.query("BEGIN");
+
+    const customer = await client.query(
+      `SELECT id FROM customers WHERE id = $1 FOR UPDATE`,
+      [customerId]
+    );
+
+    if (customer.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    await client.query(`DELETE FROM visits WHERE customer_id = $1`, [customerId]);
+    await client.query(`DELETE FROM rewards WHERE customer_id = $1`, [customerId]);
+    await client.query(`DELETE FROM customer_activation_codes WHERE customer_id = $1`, [customerId]);
+    await client.query(`DELETE FROM customers WHERE id = $1`, [customerId]);
+    await client.query("COMMIT");
+
+    res.json({ message: "Customer deleted successfully", customer_id: customerId });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Customer deletion failed:", error.message);
+    res.status(500).json({ error: "Failed to delete customer" });
+  } finally {
+    client.release();
   }
 });
 

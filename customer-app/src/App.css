@@ -855,6 +855,32 @@ button:disabled {
   background: #30291d;
 }
 
+.visit-qr-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.visit-qr-form label {
+  display: grid;
+  gap: 6px;
+  color: #d9d2c5;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.visit-qr-form select,
+.visit-qr-form input {
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #413b33;
+  border-radius: 8px;
+  background: #171613;
+  color: #f4efe6;
+  font-size: 11px;
+}
+
 .page-footer {
   display: flex;
   justify-content: space-between;

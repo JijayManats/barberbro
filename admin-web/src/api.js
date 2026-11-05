@@ -77,6 +77,11 @@ export const api = {
       method: "POST",
     }),
 
+  deleteCustomer: (customerId) =>
+    request(`/customers/${customerId}`, {
+      method: "DELETE",
+    }),
+
   lookupCustomerByQr: (qrPayload) =>
     request("/customers/lookup", {
       method: "POST",

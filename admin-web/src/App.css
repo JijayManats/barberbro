@@ -234,10 +234,13 @@ a { color: inherit; text-decoration: none; }
 .admin-tag { display: inline-block; border-radius: 5px; padding: 6px 7px; font-size: 8px; }
 .active-tag { background: #edf4e9; color: #4f7d4b; }
 .admin-tag.ready { background: #f8eedc; color: #98703a; }
-.admin-actions { min-width: 95px; }
+.admin-actions { min-width: 110px; }
+.admin-action-stack { display: flex; flex-wrap: wrap; gap: 6px; }
 .admin-action-button { border: 1px solid #ddd5c5; color: #6e522d; background: #fbf8f2; border-radius: 5px; padding: 7px 9px; font-size: 9px; }
 .admin-action-button:hover { background: #f2e6d2; }
 .reward-button { background: #25261f; color: white; border-color: #25261f; }
+.admin-delete-button { border-color: #f0c6c2; background: #fff5f4; color: #8c3a38; }
+.admin-delete-button:hover { background: #fbe2df; }
 .admin-empty { text-align: center; color: #89877e; font-size: 11px; padding: 24px 10px; }
 .admin-demo-note { font-size: 9px; color: #99968d; margin: 15px 0 0; }
 .admin-footer { color: #a09d94; font-size: 9px; text-align: center; padding: 10px; }

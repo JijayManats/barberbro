@@ -276,9 +276,19 @@ function App() {
     customer?.email?.split('@')[0]?.trim() ||
     customer?.member_code ||
     'BarberBro Member'
+
+  const [visitService, setVisitService] = useState('Classic Haircut')
+  const [visitBarber, setVisitBarber] = useState('Michael')
+  const [visitAmount, setVisitAmount] = useState('100')
+
   const qrValue = customer
     ? `barberbro://member/${customer.id}/${encodeURIComponent(customer.member_code)}`
     : ''
+
+  const visitQrValue = customer
+    ? `barberbro://visit/${customer.id}/${encodeURIComponent(customer.member_code)}?service=${encodeURIComponent(visitService)}&barber=${encodeURIComponent(visitBarber)}&amount=${encodeURIComponent(String(Number(visitAmount) || 0))}`
+    : ''
+
   const initials = displayName
     .split(' ')
     .filter(Boolean)
@@ -664,13 +674,46 @@ function App() {
               <section className="member-qr-panel">
                 <div className="member-qr-card">
                   <div className="member-qr-copy">
-                    <div className="eyebrow"><span /> MEMBER CARD</div>
+                    <div className="eyebrow"><span /> VISIT QR</div>
                     <h2>{displayName}</h2>
                     <p>Member ID</p>
                     <strong>{customer.member_code}</strong>
+
+                    <div className="visit-qr-form">
+                      <label>
+                        Service
+                        <select value={visitService} onChange={(event) => setVisitService(event.target.value)}>
+                          <option>Classic Haircut</option>
+                          <option>Haircut + Styling</option>
+                          <option>Haircut + Shave</option>
+                        </select>
+                      </label>
+                      <label>
+                        Barber
+                        <select value={visitBarber} onChange={(event) => setVisitBarber(event.target.value)}>
+                          <option>Michael</option>
+                          <option>Barber 01</option>
+                          <option>Barber 02</option>
+                          <option>Barber 03</option>
+                          <option>Barber 04</option>
+                          <option>Barber 05</option>
+                        </select>
+                      </label>
+                      <label>
+                        Amount (₱)
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={visitAmount}
+                          onChange={(event) => setVisitAmount(event.target.value)}
+                        />
+                      </label>
+                    </div>
                   </div>
+
                   <div className="member-qr-box">
-                    <QRCode value={qrValue} size={170} bgColor="#fffaf4" fgColor="#171a2c" />
+                    <QRCode value={visitQrValue || qrValue} size={170} bgColor="#fffaf4" fgColor="#171a2c" />
                   </div>
                 </div>
               </section>
