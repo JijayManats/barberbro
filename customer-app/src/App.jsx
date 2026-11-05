@@ -8,6 +8,7 @@ const API_URL =
 
 const menuItems = [
   { id: 'dashboard', icon: '▦', label: 'Dashboard' },
+  { id: 'visit', icon: '✂', label: 'Visit' },
   { id: 'rewards', icon: '✧', label: 'My Rewards' },
   { id: 'visits', icon: '◷', label: 'Visit History' },
   { id: 'profile', icon: '♙', label: 'My Profile' },
@@ -55,6 +56,10 @@ function App() {
   const [barbers, setBarbers] = useState([])
   const [dataLoading, setDataLoading] = useState(false)
   const [dataError, setDataError] = useState('')
+  const [visitService, setVisitService] = useState('Classic Haircut')
+  const [visitBarber, setVisitBarber] = useState('Michael')
+  const [visitAmount, setVisitAmount] = useState('100')
+  const [generatedVisitQr, setGeneratedVisitQr] = useState('')
 
   const logout = useCallback(() => {
     localStorage.removeItem('barberbro_token')
@@ -65,6 +70,7 @@ function App() {
     setLoginError('')
     setDataError('')
     setActivePage('dashboard')
+    setGeneratedVisitQr('')
   }, [])
 
   const apiRequest = useCallback(async (path, accessToken) => {
@@ -304,17 +310,21 @@ function App() {
     customer?.member_code ||
     'BarberBro Member'
 
-  const [visitService, setVisitService] = useState('Classic Haircut')
-  const [visitBarber, setVisitBarber] = useState('Michael')
-  const [visitAmount, setVisitAmount] = useState('100')
-
-  const qrValue = customer
-    ? `barberbro://member/${customer.id}/${encodeURIComponent(customer.member_code)}`
-    : ''
-
   const visitQrValue = customer
-    ? `barberbro://visit/${customer.id}/${encodeURIComponent(customer.member_code)}?service=${encodeURIComponent(visitService)}&barber=${encodeURIComponent(visitBarber)}&amount=${encodeURIComponent(String(Number(visitAmount) || 0))}`
+    ? [
+        'BBV1',
+        customer.id,
+        encodeURIComponent(customer.member_code || ''),
+        encodeURIComponent(visitService),
+        encodeURIComponent(visitBarber),
+        String(Number(visitAmount) || 0),
+      ].join('|')
     : ''
+
+  function generateVisitQr(event) {
+    event.preventDefault()
+    setGeneratedVisitQr(visitQrValue)
+  }
 
   const initials = displayName
     .split(' ')
@@ -698,50 +708,6 @@ function App() {
                 <div className="membership-watermark">BB</div>
               </section>
 
-              <section className="member-qr-panel">
-                <div className="member-qr-card">
-                  <div className="member-qr-copy">
-                    <div className="eyebrow"><span /> VISIT QR</div>
-                    <h2>{displayName}</h2>
-                    <p>Member ID</p>
-                    <strong>{customer.member_code}</strong>
-
-                    <div className="visit-qr-form">
-                      <label>
-                        Service
-                        <select value={visitService} onChange={(event) => setVisitService(event.target.value)}>
-                          <option>Classic Haircut</option>
-                          <option>Haircut + Styling</option>
-                          <option>Haircut + Shave</option>
-                        </select>
-                      </label>
-                      <label>
-                        Barber
-                        <select value={visitBarber} onChange={(event) => setVisitBarber(event.target.value)}>
-                          {barbers.length > 0 ? barbers.map((barber) => (
-                            <option key={barber.id} value={barber.name}>{barber.name}</option>
-                          )) : <option>Michael</option>}
-                        </select>
-                      </label>
-                      <label>
-                        Amount (₱)
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={visitAmount}
-                          onChange={(event) => setVisitAmount(event.target.value)}
-                        />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="member-qr-box">
-                    <QRCode value={visitQrValue || qrValue} size={170} bgColor="#fffaf4" fgColor="#171a2c" />
-                  </div>
-                </div>
-              </section>
-
               <section className="bottom-grid">
                 <article className="panel visit-panel">
                   <div className="panel-heading">
@@ -793,6 +759,87 @@ function App() {
                 </article>
               </section>
             </>
+          )}
+
+          {!dataLoading && customer && activePage === 'visit' && (
+            <section className="inner-page">
+              <div className="page-heading">
+                <div className="eyebrow"><span /> CREATE A VISIT TICKET</div>
+                <h1>Record a <span>Visit</span></h1>
+                <p>Enter your service details, then show the temporary QR code to the admin to record your visit.</p>
+              </div>
+              <div className="visit-ticket-layout">
+                <form className="panel visit-ticket-form" onSubmit={generateVisitQr}>
+                  <div className="panel-heading">
+                    <div><h2>Visit details</h2><p>Confirm these with the barber before generating your code.</p></div>
+                  </div>
+                  <div className="visit-qr-form">
+                    <label>
+                      Service
+                      <select
+                        value={visitService}
+                        onChange={(event) => {
+                          setVisitService(event.target.value)
+                          setGeneratedVisitQr('')
+                        }}
+                      >
+                        <option>Classic Haircut</option>
+                        <option>Haircut + Styling</option>
+                        <option>Haircut + Shave</option>
+                      </select>
+                    </label>
+                    <label>
+                      Barber
+                      <select
+                        value={visitBarber}
+                        onChange={(event) => {
+                          setVisitBarber(event.target.value)
+                          setGeneratedVisitQr('')
+                        }}
+                      >
+                        {barbers.length > 0 ? barbers.map((barber) => (
+                          <option key={barber.id} value={barber.name}>{barber.name}</option>
+                        )) : <option>Michael</option>}
+                      </select>
+                    </label>
+                    <label>
+                      Amount paid (₱)
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={visitAmount}
+                        onChange={(event) => {
+                          setVisitAmount(event.target.value)
+                          setGeneratedVisitQr('')
+                        }}
+                        required
+                      />
+                    </label>
+                  </div>
+                  <button className="gold-button visit-ticket-submit" type="submit">
+                    Generate visit QR <span>→</span>
+                  </button>
+                </form>
+
+                <div className="panel visit-ticket-qr">
+                  {generatedVisitQr ? (
+                    <>
+                      <QRCode value={generatedVisitQr} size={280} level="L" bgColor="#fffaf4" fgColor="#171a2c" />
+                      <h2>Show this code to the admin</h2>
+                      <p>{visitService} · {visitBarber} · {money(visitAmount)}</p>
+                      <span className="ticket-member-code">{customer.member_code}</span>
+                    </>
+                  ) : (
+                    <div className="visit-ticket-placeholder">
+                      <span className="ticket-placeholder-icon">▦</span>
+                      <h2>Your visit QR will appear here</h2>
+                      <p>Generate it after confirming the service, barber, and amount paid.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
           )}
 
           {!dataLoading && customer && activePage === 'rewards' && (

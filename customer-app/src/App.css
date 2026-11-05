@@ -881,6 +881,72 @@ button:disabled {
   font-size: 11px;
 }
 
+.visit-ticket-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.8fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.visit-ticket-form {
+  align-self: start;
+}
+
+.visit-ticket-submit {
+  width: 100%;
+  margin-top: 20px;
+}
+
+.visit-ticket-qr {
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.visit-ticket-qr h2,
+.visit-ticket-placeholder h2 {
+  margin: 4px 0 0;
+  color: #eee8dc;
+  font-size: 16px;
+}
+
+.visit-ticket-qr p,
+.visit-ticket-placeholder p {
+  max-width: 280px;
+  margin: 0;
+  color: #9c978b;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.ticket-member-code {
+  color: #dfbf79;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.visit-ticket-placeholder {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+
+.ticket-placeholder-icon {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border: 1px dashed #6a5835;
+  border-radius: 12px;
+  color: #dfbf79;
+  font-size: 28px;
+}
+
 .page-footer {
   display: flex;
   justify-content: space-between;
@@ -901,6 +967,12 @@ button:disabled {
 
 .page-heading {
   margin-bottom: 29px;
+}
+
+@media (max-width: 720px) {
+  .visit-ticket-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .page-heading h1 {

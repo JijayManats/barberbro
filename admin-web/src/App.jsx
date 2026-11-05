@@ -53,6 +53,32 @@ function parseVisitQrPayload(rawPayload) {
     return null
   }
 
+  const compactFields = trimmedPayload.split('|')
+  if (compactFields.length === 6 && compactFields[0] === 'BBV1') {
+    try {
+      const customerId = Number(compactFields[1])
+      const memberCode = decodeURIComponent(compactFields[2]).trim()
+      const service = decodeURIComponent(compactFields[3]).trim()
+      const barber = decodeURIComponent(compactFields[4]).trim()
+      const amount = Number(compactFields[5])
+
+      if (!Number.isInteger(customerId) || customerId <= 0 ||
+          !memberCode || !service || !barber ||
+          compactFields[5].trim() === '' || !Number.isFinite(amount) || amount < 0) {
+        return null
+      }
+
+      return {
+        customer_id: customerId,
+        service,
+        barber_name: barber,
+        amount,
+      }
+    } catch {
+      return null
+    }
+  }
+
   try {
     const parsedUrl = new URL(trimmedPayload)
     const visitPath = parsedUrl.protocol.toLowerCase() === 'barberbro:' &&
@@ -968,7 +994,11 @@ function App() {
                 Scan another QR
               </button>
             )}
-            {qrScanStatus && <p className="admin-login-error">{qrScanStatus}</p>}
+            {qrScanStatus && (
+              <p className={`admin-scan-status ${/unable|invalid|failed|not valid|no camera|blocked|not found/i.test(qrScanStatus) ? 'admin-scan-status-error' : ''}`}>
+                {qrScanStatus}
+              </p>
+            )}
           </div>
         </div>
       )}
