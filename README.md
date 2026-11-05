@@ -100,12 +100,13 @@ Required environment variables:
 - `EMAIL_USER`
 - `EMAIL_PASS`
 - `EMAIL_FROM`
+- `RESEND_API_KEY` (recommended for Render HTTPS email delivery; SMTP remains available as a fallback)
 
 Render will provide the `PORT` automatically; do not hardcode it unless you are explicitly using a custom setup.
 
 The repository also includes a `render.yaml` file that can be used with Render Blueprint deployments.
 
-Configure the `EMAIL_*` settings on the deployed backend service. For Gmail, use an app password rather than the account's normal password. The admin portal reports whether the SMTP server accepted the recipient; acceptance does not guarantee inbox placement, so check spam/quarantine if the message was accepted but is not visible.
+For Render, set `RESEND_API_KEY` and set `EMAIL_FROM` to a sender address on a domain verified with Resend. The backend sends email through Resend's HTTPS API when the key is present, avoiding SMTP connection timeouts. SMTP remains available when no Resend key is configured; for Gmail, use an app password rather than the account's normal password. The admin portal reports whether the mail provider accepted the recipient; acceptance does not guarantee inbox placement, so check spam/quarantine if accepted mail is missing.
 
 The admin portal refreshes shared records every 10 seconds while open. The customer app refreshes membership and visit history every 10 seconds and the active barber list every 30 seconds; both refresh sooner when brought back to the foreground.
 

@@ -289,7 +289,5 @@ a { color: inherit; text-decoration: none; }
 .admin-scan-instructions { margin: 0 0 14px; color: #77746b; font-size: 13px; line-height: 1.5; }
 .admin-scan-status { margin: 12px 0 0; padding: 10px 12px; border: 1px solid #dfe8d8; border-radius: 8px; background: #f3f8f0; color: #456b3d; font-size: 11px; text-align: center; }
 .admin-scan-status-error { border-color: #f6c2be; background: #fff1f0; color: #ae433d; }
-#admin-qr-reader { width: 100%; min-height: 280px; background: #111; border-radius: 14px; overflow: hidden; }
-#admin-qr-reader video { width: 100% !important; max-height: 360px; object-fit: cover; border-radius: 14px; }
-#admin-qr-reader img { display: none; }
+#admin-qr-reader { display: block; width: 100%; min-height: 280px; max-height: 360px; aspect-ratio: 4 / 3; background: #111; border-radius: 14px; object-fit: cover; }
 .admin-scan-again { margin-top: 12px; }

@@ -1,6 +1,5 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
 import { api, getAdminToken, saveAdminToken, clearAdminToken } from './api'
 import './App.css'
 
@@ -180,16 +179,16 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [lastRefreshedAt, setLastRefreshedAt] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [selectedCustomer, setSelectedCustomer] = useState(null)
-  const [service, setService] = useState('Classic Haircut')
-  const [amount, setAmount] = useState('100')
-  const [barber, setBarber] = useState('Michael')
   const [showAddCustomer, setShowAddCustomer] = useState(false)
   const [qrScannerOpen, setQrScannerOpen] = useState(false)
   const [qrScanStatus, setQrScanStatus] = useState('')
   const [qrScanPaused, setQrScanPaused] = useState(false)
-  const qrScannerRef = useRef(null)
   const qrScanHandledRef = useRef(false)
+  const [qrScannerRestartKey, setQrScannerRestartKey] = useState(0)
+  const qrVideoRef = useRef(null)
+  const qrScannerControlsRef = useRef(null)
+  const barbersRef = useRef(barbers)
+  const recordVisitHandlerRef = useRef(null)
   const [newName, setNewName] = useState('')
   const [newPhone, setNewPhone] = useState('')
   const [newEmail, setNewEmail] = useState('')
@@ -300,7 +299,7 @@ function App() {
   }, [logout, token])
 
   const recordVisitFromQr = useCallback(async (payload) => {
-    const visitPayload = parseVisitQrPayload(payload, barbers)
+    const visitPayload = parseVisitQrPayload(payload, barbersRef.current)
 
     if (!visitPayload) {
       setQrScanStatus('This QR is not a valid BarberBro visit ticket.')
@@ -326,81 +325,78 @@ function App() {
       setQrScanStatus(err.message || 'Unable to record the visit from this QR code.')
       return null
     }
-  }, [barbers, loadData])
+  }, [loadData])
 
   useEffect(() => {
-    if (!qrScannerOpen) return undefined
+    barbersRef.current = barbers
+    recordVisitHandlerRef.current = recordVisitFromQr
+  }, [barbers, recordVisitFromQr])
+
+  useEffect(() => {
+    if (!qrScannerOpen || !qrVideoRef.current) return undefined
 
     let cancelled = false
-    let startTask
-    const scanner = new Html5Qrcode('admin-qr-reader', {
-      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-    })
-    qrScannerRef.current = scanner
+    let controls
     qrScanHandledRef.current = false
 
-    startTask = Html5Qrcode.getCameras().then((cameras) => {
-      if (cancelled) return
-      if (cameras.length === 0) {
-        throw new Error('No camera was detected on this device.')
-      }
+    async function startScanner() {
+      try {
+        const { BrowserCodeReader, BrowserQRCodeReader } = await import('@zxing/browser')
+        if (cancelled) return
 
-      const rearCamera = cameras.find((camera) =>
-        /back|rear|environment|world/i.test(camera.label)
-      )
-      const camera = rearCamera || cameras[0]
+        const cameras = await BrowserCodeReader.listVideoInputDevices()
+        if (cancelled) return
+        if (cameras.length === 0) {
+          throw new Error('No camera was detected on this device.')
+        }
 
-      return scanner.start(
-        { deviceId: { exact: camera.id } },
-        {
-          fps: 15,
-          videoConstraints: {
-            deviceId: { exact: camera.id },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-        },
-        async (decodedText) => {
-          if (qrScanHandledRef.current) return
+        const scanner = new BrowserQRCodeReader()
+        const rearCamera = cameras.find((camera) =>
+          /back|rear|environment|world/i.test(camera.label)
+        )
+        const camera = rearCamera || cameras[0]
 
-          qrScanHandledRef.current = true
-          setQrScanStatus('QR detected. Recording visit...')
-          scanner.pause(true)
-          setQrScanPaused(true)
-          await recordVisitFromQr(decodedText)
-        },
-        () => {}
-      )
-    }).then(() => {
-      if (!cancelled) {
+        controls = await scanner.decodeFromVideoDevice(
+          camera?.deviceId,
+          qrVideoRef.current,
+          (result, _decodeError, scanControls) => {
+            if (!result || qrScanHandledRef.current) return
+
+            qrScanHandledRef.current = true
+            setQrScanStatus('QR detected. Recording visit...')
+            setQrScanPaused(true)
+            scanControls.stop()
+            recordVisitHandlerRef.current?.(result.getText())
+          }
+        )
+
+        if (cancelled) {
+          controls.stop()
+          return
+        }
+
+        qrScannerControlsRef.current = controls
         setQrScanStatus('Point the camera at the customer visit QR.')
-      }
-    }).catch((err) => {
-      if (!cancelled) {
+      } catch (err) {
+        if (cancelled) return
         setQrScanStatus(getCameraStartupError(err))
       }
-    })
+    }
+
+    startScanner()
 
     return () => {
       cancelled = true
-      qrScannerRef.current = null
-      startTask.then(async () => {
-        if (scanner.isScanning) await scanner.stop()
-        scanner.clear()
-      }).catch((err) => {
-        console.error('Unable to stop the QR scanner cleanly:', err)
-      })
+      qrScannerControlsRef.current?.stop()
+      qrScannerControlsRef.current = null
     }
-  }, [qrScannerOpen, recordVisitFromQr])
+  }, [qrScannerOpen, qrScannerRestartKey])
 
   function resumeQrScanner() {
-    const scanner = qrScannerRef.current
-    if (!scanner?.isScanning) return
-
     qrScanHandledRef.current = false
     setQrScanPaused(false)
+    setQrScannerRestartKey((current) => current + 1)
     setQrScanStatus('Point the camera at the customer visit QR.')
-    scanner.resume()
   }
 
   async function handleLogin(event) {
@@ -450,52 +446,6 @@ function App() {
       .includes(search.toLowerCase())
   )
 
-  function recordVisit(customer) {
-    if (customer.stamps >= target) {
-      setNotice(`${customer.name} has a reward ready. Redeem it before adding another stamp.`)
-      return
-    }
-
-    setSelectedCustomer(customer)
-    setService('Classic Haircut')
-    setAmount('100')
-    setBarber('Michael')
-    setNotice('')
-    setError('')
-  }
-
-  async function confirmVisit() {
-    if (!selectedCustomer || saving) return
-
-    const price = Number(amount)
-
-    if (!Number.isFinite(price) || price < 0 || amount.trim() === '') {
-      setError('Please enter a valid service amount.')
-      return
-    }
-
-    setSaving(true)
-    setError('')
-    setNotice('')
-
-    try {
-      await api.recordVisit({
-        customer_id: selectedCustomer.id,
-        service,
-        barber_name: barber,
-        amount: price,
-      })
-
-      setSelectedCustomer(null)
-      setNotice(`Visit recorded for ${selectedCustomer.name}. One stamp has been added.`)
-      await loadData()
-    } catch (err) {
-      setError(err.message || 'Failed to record visit.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function addCustomer(e) {
     e.preventDefault()
     if (saving) return
@@ -544,7 +494,7 @@ function App() {
         setError(
           `The activation code was generated, but the email was NOT sent${result.email ? ` to ${result.email}` : ''}. ` +
           `${result.email_error || 'No email delivery details were returned.'} ` +
-          'Check the EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, and EMAIL_FROM settings on the deployed backend.'
+          'For Render, set RESEND_API_KEY and a verified EMAIL_FROM sender; alternatively check the EMAIL_HOST, EMAIL_PORT, EMAIL_USER, and EMAIL_PASS SMTP settings.'
         )
       }
     } catch (err) {
@@ -919,7 +869,6 @@ function App() {
               </div>
               <CustomerTable
                 customers={filteredCustomers.slice(0, 5)}
-                onRecord={recordVisit}
                 onRedeem={redeemReward}
                 onCreateCode={createActivationCode}
                 onDelete={deleteCustomer}
@@ -1064,7 +1013,13 @@ function App() {
             <p className="admin-scan-instructions">
               Hold the customer app QR steady, fully inside the camera view, and make sure it is well lit. The visit will record automatically when detected.
             </p>
-            <div id="admin-qr-reader" />
+            <video
+              id="admin-qr-reader"
+              ref={qrVideoRef}
+              autoPlay
+              muted
+              playsInline
+            />
             {qrScanPaused && (
               <button type="button" className="admin-outline admin-scan-again" onClick={resumeQrScanner}>
                 Scan another QR

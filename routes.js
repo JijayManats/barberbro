@@ -117,6 +117,7 @@ async function sendMemberCardEmail(customer, activationCode) {
     return { sent: false, reason: "missing-email" };
   }
 
+  const resendApiKey = process.env.RESEND_API_KEY;
   const host = process.env.EMAIL_HOST;
   const port = Number(process.env.EMAIL_PORT || 587);
   const user = process.env.EMAIL_USER;
@@ -127,13 +128,18 @@ async function sendMemberCardEmail(customer, activationCode) {
   const qrPayload = buildCustomerQrPayload(customer);
   const memberId = String(customer?.member_code || "").toUpperCase();
 
-  if (!host || !user || !pass) {
+  if (!resendApiKey && (!host || !user || !pass)) {
     const preview = `Customer: ${displayName}
 Member ID: ${memberId}
 Activation code: ${activationCode}
 QR payload: ${qrPayload}`;
     console.log("[member-card-demo]", preview);
-    return { sent: false, reason: "smtp-missing", preview };
+    return {
+      sent: false,
+      reason: "email-provider-not-configured",
+      error: "Set RESEND_API_KEY for HTTPS email delivery, or configure the EMAIL_HOST, EMAIL_PORT, EMAIL_USER, and EMAIL_PASS SMTP settings.",
+      preview,
+    };
   }
 
   const nodemailer = require("nodemailer");
@@ -148,31 +154,6 @@ QR payload: ${qrPayload}`;
         },
       })
     : "";
-
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    requireTLS: true,
-    tls: {
-      rejectUnauthorized: false,
-    },
-    auth: { user, pass },
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 15000,
-  });
-
-  try {
-    await transporter.verify();
-  } catch (verifyError) {
-    console.error("[member-card-email] SMTP verification failed:", verifyError.message);
-    return {
-      sent: false,
-      reason: "smtp-verification-failed",
-      error: verifyError.message,
-    };
-  }
 
   const html = `
     <div style="font-family: Arial, sans-serif; background: #f5efe7; padding: 24px; color: #171a2c;">
@@ -208,6 +189,85 @@ QR payload: ${qrPayload}`;
   `;
 
   const text = `Welcome, ${displayName}\n\nMember ID: ${memberId}\nActivation code: ${activationCode}\nQR payload: ${qrPayload || "Unavailable"}\n\nUse your member ID and activation code on the BarberBro customer app to finish setting up your account.`;
+
+  if (resendApiKey) {
+    if (!process.env.EMAIL_FROM) {
+      return {
+        sent: false,
+        reason: "resend-sender-not-configured",
+        error: "Set EMAIL_FROM to a sender address verified by Resend.",
+      };
+    }
+
+    let response;
+    try {
+      response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from,
+          to: [customer.email],
+          subject: "Your BarberBro member card and activation code",
+          text,
+          html,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (error) {
+      const message = error.name === "TimeoutError"
+        ? "Resend email request timed out."
+        : error.message;
+      console.error("[member-card-email] Resend request failed:", message);
+      return { sent: false, reason: "resend-request-failed", error: message };
+    }
+
+    const responseText = await response.text();
+    let result = {};
+    if (responseText) {
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        result = { message: responseText };
+      }
+    }
+
+    if (!response.ok || !result.id) {
+      const message = result.message || `Resend rejected the email request (HTTP ${response.status}).`;
+      console.error("[member-card-email] Resend rejected the message:", message);
+      return { sent: false, reason: "resend-rejected", error: message };
+    }
+
+    console.info("[member-card-email] Resend accepted message:", result.id);
+    return { sent: true, message_id: result.id, provider: "resend" };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    requireTLS: true,
+    tls: {
+      rejectUnauthorized: false,
+    },
+    auth: { user, pass },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
+  });
+
+  try {
+    await transporter.verify();
+  } catch (verifyError) {
+    console.error("[member-card-email] SMTP verification failed:", verifyError.message);
+    return {
+      sent: false,
+      reason: "smtp-verification-failed",
+      error: verifyError.message,
+    };
+  }
 
   const delivery = await transporter.sendMail({
     from,

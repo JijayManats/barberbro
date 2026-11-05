@@ -29,3 +29,5 @@ services:
         value: your_app_password
       - key: EMAIL_FROM
         value: BarberBro <your-email@gmail.com>
+      - key: RESEND_API_KEY
+        sync: false
