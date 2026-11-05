@@ -14,6 +14,12 @@ const menuItems = [
   { id: 'profile', icon: '♙', label: 'My Profile' },
 ]
 
+const visitServices = [
+  { code: '1', name: 'Classic Haircut' },
+  { code: '2', name: 'Haircut + Styling' },
+  { code: '3', name: 'Haircut + Shave' },
+]
+
 const money = (value) =>
   new Intl.NumberFormat('en-PH', {
     style: 'currency',
@@ -50,12 +56,14 @@ function App() {
   const [apiStatus, setApiStatus] = useState('checking')
   const [activePage, setActivePage] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   const [customer, setCustomer] = useState(null)
   const [visits, setVisits] = useState([])
   const [barbers, setBarbers] = useState([])
   const [dataLoading, setDataLoading] = useState(false)
   const [dataError, setDataError] = useState('')
+  const [barberError, setBarberError] = useState('')
   const [visitService, setVisitService] = useState('Classic Haircut')
   const [visitBarber, setVisitBarber] = useState('Michael')
   const [visitAmount, setVisitAmount] = useState('100')
@@ -75,6 +83,7 @@ function App() {
 
   const apiRequest = useCallback(async (path, accessToken) => {
     const response = await fetch(`${API_URL}${path}`, {
+      cache: 'no-store',
       headers: {
                                 ...( accessToken ? { Authorization: "Bearer " + accessToken } : {}),
         'Content-Type': 'application/json',
@@ -94,7 +103,7 @@ function App() {
   useEffect(() => {
     let active = true
 
-    fetch(`${API_URL}/health`)
+    fetch(`${API_URL}/health`, { cache: 'no-store' })
       .then((response) => {
         if (!response.ok) throw new Error('Backend unavailable')
         return response.json()
@@ -113,29 +122,48 @@ function App() {
 
   useEffect(() => {
     let active = true
+    let requestInFlight = false
 
-    fetch(`${API_URL}/barbers`)
-      .then((response) => {
+    async function loadBarbers() {
+      if (requestInFlight) return
+      requestInFlight = true
+
+      try {
+        const response = await fetch(`${API_URL}/barbers`, { cache: 'no-store' })
         if (!response.ok) throw new Error('Unable to load barbers')
-        return response.json()
-      })
-      .then((rows) => {
+        const rows = await response.json()
         if (!active) return
-        const loadedBarbers = Array.isArray(rows) && rows.length > 0 ? rows : [{ id: 1, name: 'Michael', specialty: 'General barber' }]
+        const loadedBarbers = Array.isArray(rows) ? rows : []
         setBarbers(loadedBarbers)
-        setVisitBarber((current) => current || loadedBarbers[0]?.name || 'Michael')
-      })
-      .catch(() => {
-        if (active) {
-          setBarbers([{ id: 1, name: 'Michael', specialty: 'General barber' }])
-          setVisitBarber('Michael')
-        }
-      })
+        setVisitBarber((current) =>
+          loadedBarbers.some((barber) => barber.name === current)
+            ? current
+            : loadedBarbers[0]?.name || ''
+        )
+        setBarberError('')
+      } catch {
+        if (active) setBarberError('Unable to load the barber list. Check your connection and retry.')
+      } finally {
+        requestInFlight = false
+      }
+    }
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') loadBarbers()
+    }
+
+    loadBarbers()
+    const refreshTimer = window.setInterval(refreshWhenVisible, 30000)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    window.addEventListener('focus', refreshWhenVisible)
 
     return () => {
+      window.clearInterval(refreshTimer)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      window.removeEventListener('focus', refreshWhenVisible)
       active = false
     }
-  }, [])
+  }, [refreshKey])
 
   useEffect(() => {
     if (!token) {
@@ -147,10 +175,12 @@ function App() {
 
     let active = true
 
-    async function loadCustomerData() {
-      setDataLoading(true)
-      setDataError('')
+    let requestInFlight = false
 
+    async function loadCustomerData(showLoading = false) {
+      if (requestInFlight) return
+      requestInFlight = true
+      if (showLoading) setDataLoading(true)
       try {
         const [profile, visitHistory] = await Promise.all([
           apiRequest('/auth/me', token),
@@ -161,6 +191,7 @@ function App() {
 
         setCustomer(profile)
         setVisits(Array.isArray(visitHistory) ? visitHistory : [])
+        setDataError('')
       } catch (error) {
         if (!active) return
 
@@ -173,16 +204,27 @@ function App() {
           )
         }
       } finally {
-        if (active) setDataLoading(false)
+        requestInFlight = false
+        if (active && showLoading) setDataLoading(false)
       }
     }
 
-    loadCustomerData()
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') loadCustomerData()
+    }
+
+    loadCustomerData(true)
+    const refreshTimer = window.setInterval(refreshWhenVisible, 10000)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    window.addEventListener('focus', refreshWhenVisible)
 
     return () => {
       active = false
+      window.clearInterval(refreshTimer)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      window.removeEventListener('focus', refreshWhenVisible)
     }
-  }, [token, apiRequest, logout])
+  }, [token, apiRequest, logout, refreshKey])
 
   async function handleLogin(event) {
     event.preventDefault()
@@ -310,19 +352,24 @@ function App() {
     customer?.member_code ||
     'BarberBro Member'
 
-  const visitQrValue = customer
+  const selectedVisitBarber = barbers.find((item) => item.name === visitBarber)
+  const visitQrValue = customer && selectedVisitBarber
     ? [
-        'BBV1',
+        'BBV2',
         customer.id,
-        encodeURIComponent(customer.member_code || ''),
-        encodeURIComponent(visitService),
-        encodeURIComponent(visitBarber),
+        visitServices.find((service) => service.name === visitService)?.code || '1',
+        selectedVisitBarber.id,
         String(Number(visitAmount) || 0),
       ].join('|')
     : ''
 
   function generateVisitQr(event) {
     event.preventDefault()
+    if (!selectedVisitBarber?.id) {
+      setBarberError('No active barber is available. Try again after the barber list refreshes.')
+      return
+    }
+
     setGeneratedVisitQr(visitQrValue)
   }
 
@@ -588,21 +635,23 @@ function App() {
               <span className="calendar-icon">▦</span>
               <span>{displayName}</span>
             </div>
+            <span className="live-refresh-label">LIVE · 10s</span>
             <div className="avatar">{initials || 'C'}</div>
             <button className="text-button" onClick={logout}>Log out</button>
           </div>
         </header>
 
         <div className="page-content">
-          {dataError && (
+          {(dataError || barberError) && (
             <div className="form-error" role="alert">
-              {dataError}
+              {dataError || barberError}
               <button
                 className="text-button"
-                onClick={() => setToken((current) => {
+                onClick={() => {
                   setDataError('')
-                  return current
-                })}
+                  setBarberError('')
+                  setRefreshKey((current) => current + 1)
+                }}
               >
                 Retry
               </button>
@@ -783,9 +832,9 @@ function App() {
                           setGeneratedVisitQr('')
                         }}
                       >
-                        <option>Classic Haircut</option>
-                        <option>Haircut + Styling</option>
-                        <option>Haircut + Shave</option>
+                        {visitServices.map((service) => (
+                          <option key={service.code}>{service.name}</option>
+                        ))}
                       </select>
                     </label>
                     <label>
@@ -817,7 +866,11 @@ function App() {
                       />
                     </label>
                   </div>
-                  <button className="gold-button visit-ticket-submit" type="submit">
+                  <button
+                    className="gold-button visit-ticket-submit"
+                    type="submit"
+                    disabled={!selectedVisitBarber?.id}
+                  >
                     Generate visit QR <span>→</span>
                   </button>
                 </form>

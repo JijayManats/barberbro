@@ -35,6 +35,7 @@ async function request(endpoint, options = {}) {
 
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
                   ...( token ? { Authorization: "Bearer " + token } : {}),

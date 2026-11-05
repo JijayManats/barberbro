@@ -105,6 +105,10 @@ Render will provide the `PORT` automatically; do not hardcode it unless you are 
 
 The repository also includes a `render.yaml` file that can be used with Render Blueprint deployments.
 
+Configure the `EMAIL_*` settings on the deployed backend service. For Gmail, use an app password rather than the account's normal password. The admin portal reports whether the SMTP server accepted the recipient; acceptance does not guarantee inbox placement, so check spam/quarantine if the message was accepted but is not visible.
+
+The admin portal refreshes shared records every 10 seconds while open. The customer app refreshes membership and visit history every 10 seconds and the active barber list every 30 seconds; both refresh sooner when brought back to the foreground.
+
 ## Admin credentials
 
 Set `ADMIN_EMAIL` and `ADMIN_PASSWORD_HASH` in your environment. The password hash should be a bcrypt hash generated from the desired admin password.

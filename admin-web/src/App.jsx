@@ -46,7 +46,7 @@ function normalizeVisit(v) {
   }
 }
 
-function parseVisitQrPayload(rawPayload) {
+function parseVisitQrPayload(rawPayload, barberRows = []) {
   const trimmedPayload = String(rawPayload || '').trim()
 
   if (!trimmedPayload) {
@@ -54,6 +54,32 @@ function parseVisitQrPayload(rawPayload) {
   }
 
   const compactFields = trimmedPayload.split('|')
+  if (compactFields.length === 5 && compactFields[0] === 'BBV2') {
+    const customerId = Number(compactFields[1])
+    const serviceByCode = {
+      1: 'Classic Haircut',
+      2: 'Haircut + Styling',
+      3: 'Haircut + Shave',
+    }
+    const service = serviceByCode[compactFields[2]]
+    const barberId = compactFields[3]
+    const selectedBarber = barberRows.find((barber) => String(barber.id) === barberId)
+    const amount = Number(compactFields[4])
+
+    if (!Number.isInteger(customerId) || customerId <= 0 ||
+        !service || !selectedBarber?.name ||
+        compactFields[4].trim() === '' || !Number.isFinite(amount) || amount < 0) {
+      return null
+    }
+
+    return {
+      customer_id: customerId,
+      service,
+      barber_name: selectedBarber.name,
+      amount,
+    }
+  }
+
   if (compactFields.length === 6 && compactFields[0] === 'BBV1') {
     try {
       const customerId = Number(compactFields[1])
@@ -152,6 +178,7 @@ function App() {
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(null)
   const [saving, setSaving] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [service, setService] = useState('Classic Haircut')
@@ -174,6 +201,7 @@ function App() {
   const [rewardForm, setRewardForm] = useState({ name: '', description: '', required_stamps: 10 })
   const [editingRewardId, setEditingRewardId] = useState(null)
   const [rewardModalOpen, setRewardModalOpen] = useState(false)
+  const dataRefreshInFlightRef = useRef(null)
 
   const logout = useCallback(() => {
     clearAdminToken()
@@ -185,30 +213,45 @@ function App() {
     setActivePage('Dashboard')
   }, [])
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ background = false } = {}) => {
     if (!token) return
 
-    setLoading(true)
+    if (dataRefreshInFlightRef.current) {
+      await dataRefreshInFlightRef.current
+      return
+    }
+
+    if (!background) setLoading(true)
     setError('')
 
-    try {
-      const [dashboard, customerRows, visitRows, barberRows, rewardRows] = await Promise.all([
-        api.getDashboard(),
-        api.getCustomers(),
-        api.getVisits(),
-        api.getBarbers(),
-        api.getRewardTemplates(),
-      ])
+    const refresh = (async () => {
+      try {
+        const [dashboard, customerRows, visitRows, barberRows, rewardRows] = await Promise.all([
+          api.getDashboard(),
+          api.getCustomers(),
+          api.getVisits(),
+          api.getBarbers(),
+          api.getRewardTemplates(),
+        ])
 
-      setStats(dashboard)
-      setCustomers(customerRows.map(normalizeCustomer))
-      setVisits(visitRows.map(normalizeVisit))
-      setBarbers(Array.isArray(barberRows) ? barberRows : [])
-      setRewardTemplates(Array.isArray(rewardRows) ? rewardRows : [])
-    } catch (err) {
-      setError(err.message || 'Unable to load BarberBro data.')
+        setStats(dashboard)
+        setCustomers(customerRows.map(normalizeCustomer))
+        setVisits(visitRows.map(normalizeVisit))
+        setBarbers(Array.isArray(barberRows) ? barberRows : [])
+        setRewardTemplates(Array.isArray(rewardRows) ? rewardRows : [])
+        setLastRefreshedAt(new Date())
+      } catch (err) {
+        setError(err.message || 'Unable to load BarberBro data.')
+      } finally {
+        if (!background) setLoading(false)
+      }
+    })()
+
+    dataRefreshInFlightRef.current = refresh
+    try {
+      await refresh
     } finally {
-      setLoading(false)
+      dataRefreshInFlightRef.current = null
     }
   }, [token])
 
@@ -227,6 +270,24 @@ function App() {
   useEffect(() => {
     if (!token) return undefined
 
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') loadData({ background: true })
+    }
+
+    const refreshTimer = window.setInterval(refreshWhenVisible, 10000)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    window.addEventListener('focus', refreshWhenVisible)
+
+    return () => {
+      window.clearInterval(refreshTimer)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      window.removeEventListener('focus', refreshWhenVisible)
+    }
+  }, [loadData, token])
+
+  useEffect(() => {
+    if (!token) return undefined
+
     const handleUnauthorized = () => {
       logout()
       setLoginError('Your session expired. Please sign in again.')
@@ -239,7 +300,7 @@ function App() {
   }, [logout, token])
 
   const recordVisitFromQr = useCallback(async (payload) => {
-    const visitPayload = parseVisitQrPayload(payload)
+    const visitPayload = parseVisitQrPayload(payload, barbers)
 
     if (!visitPayload) {
       setQrScanStatus('This QR is not a valid BarberBro visit ticket.')
@@ -265,7 +326,7 @@ function App() {
       setQrScanStatus(err.message || 'Unable to record the visit from this QR code.')
       return null
     }
-  }, [loadData])
+  }, [barbers, loadData])
 
   useEffect(() => {
     if (!qrScannerOpen) return undefined
@@ -473,9 +534,19 @@ function App() {
 
     try {
       const result = await api.createActivationCode(customer.id)
-      setNotice(
+      const activationDetails =
         `${customer.name} can activate with member code ${result.member_code} and code ${result.code}.`
-      )
+
+      if (result.email_sent) {
+        setNotice(`${activationDetails} Email accepted by the mail server for ${result.email}.`)
+      } else {
+        setNotice(activationDetails)
+        setError(
+          `The activation code was generated, but the email was NOT sent${result.email ? ` to ${result.email}` : ''}. ` +
+          `${result.email_error || 'No email delivery details were returned.'} ` +
+          'Check the EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, and EMAIL_FROM settings on the deployed backend.'
+        )
+      }
     } catch (err) {
       setError(err.message || 'Failed to create activation code.')
     } finally {
@@ -773,7 +844,12 @@ function App() {
             </p>
             <h1>{activePage}</h1>
           </div>
-          <div className="admin-open-label"><span /> Management Portal</div>
+          <div className="admin-open-label">
+            <span />
+            {lastRefreshedAt
+              ? `Live updates · refreshed ${lastRefreshedAt.toLocaleTimeString()}`
+              : 'Connecting to live data...'}
+          </div>
         </header>
 
         {notice && (

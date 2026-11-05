@@ -298,6 +298,13 @@ button:disabled {
   font-size: 11px;
 }
 
+.live-refresh-label {
+  color: #77b58a;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
 .calendar-icon {
   color: var(--gold);
   font-size: 17px;
@@ -1286,7 +1293,7 @@ button:disabled {
   }
 
   .topbar-right {
-    gap: 0;
+    gap: 10px;
   }
 
   .page-content {

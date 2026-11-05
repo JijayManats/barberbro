@@ -209,7 +209,7 @@ QR payload: ${qrPayload}`;
 
   const text = `Welcome, ${displayName}\n\nMember ID: ${memberId}\nActivation code: ${activationCode}\nQR payload: ${qrPayload || "Unavailable"}\n\nUse your member ID and activation code on the BarberBro customer app to finish setting up your account.`;
 
-  await transporter.sendMail({
+  const delivery = await transporter.sendMail({
     from,
     to: customer.email,
     subject: "Your BarberBro member card and activation code",
@@ -217,7 +217,22 @@ QR payload: ${qrPayload}`;
     html,
   });
 
-  return { sent: true };
+  const acceptedRecipients = Array.isArray(delivery.accepted)
+    ? delivery.accepted.map((recipient) => String(recipient).toLowerCase())
+    : [];
+  const sent = acceptedRecipients.includes(String(customer.email).toLowerCase());
+
+  if (!sent) {
+    console.warn("[member-card-email] Recipient was not accepted by the SMTP server:", customer.email);
+    return {
+      sent: false,
+      reason: "recipient-rejected",
+      error: "The mail server did not accept the recipient address.",
+    };
+  }
+
+  console.info("[member-card-email] Message accepted by SMTP server:", customer.email);
+  return { sent: true, message_id: delivery.messageId };
 }
 
 router.get("/barbers", async (req, res) => {
@@ -595,7 +610,9 @@ router.post("/customers/:id/activation-code", async (req, res) => {
       member_code: customer.member_code,
       email: customer.email,
       email_sent: emailResult.sent,
-      email_error: emailResult.sent ? null : (emailResult.error || emailResult.reason || "email sending failed"),
+      email_error: emailResult.sent
+        ? null
+        : (emailResult.error || emailResult.reason || "Email sending failed"),
     });
   } catch (error) {
     console.error("Activation code generation failed:", error.message);
