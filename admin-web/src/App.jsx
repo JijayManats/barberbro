@@ -82,6 +82,32 @@ function parseVisitQrPayload(rawPayload) {
   }
 }
 
+function getCameraStartupError(error) {
+  const detail = typeof error === 'string'
+    ? error
+    : error?.message || String(error || '')
+
+  if (!window.isSecureContext) {
+    return 'Camera access requires a secure HTTPS page. Open the admin site using its HTTPS address.'
+  }
+
+  if (/notallowederror|permission denied|not allowed/i.test(detail)) {
+    return 'Camera access was blocked by the browser. Allow camera access for this site, then try again.'
+  }
+
+  if (/notfounderror|no camera|device not found/i.test(detail)) {
+    return 'No available camera was found. Connect a camera and try again.'
+  }
+
+  if (/notreadableerror|could not start video source|device in use/i.test(detail)) {
+    return 'The camera is already in use by another app or browser tab. Close it and try again.'
+  }
+
+  return detail
+    ? `Unable to start the camera: ${detail}`
+    : 'Unable to start the camera. Check that the browser can access a camera and try again.'
+}
+
 function App() {
   const [token, setToken] = useState(() => getAdminToken())
   const [email, setEmail] = useState('')
@@ -224,27 +250,37 @@ function App() {
     qrScannerRef.current = scanner
     qrScanHandledRef.current = false
 
-    startTask = scanner.start(
-      { facingMode: { ideal: 'environment' } },
-      { fps: 10, qrbox: { width: 260, height: 260 } },
-      async (decodedText) => {
-        if (qrScanHandledRef.current) return
+    startTask = Html5Qrcode.getCameras().then((cameras) => {
+      if (cancelled) return
+      if (cameras.length === 0) {
+        throw new Error('No camera was detected on this device.')
+      }
 
-        qrScanHandledRef.current = true
-        scanner.pause(true)
-        setQrScanPaused(true)
-        await recordVisitFromQr(decodedText)
-      },
-      () => {}
-    ).then(() => {
+      const rearCamera = cameras.find((camera) =>
+        /back|rear|environment|world/i.test(camera.label)
+      )
+      const camera = rearCamera || cameras[0]
+
+      return scanner.start(
+        camera.id,
+        { fps: 10, qrbox: { width: 260, height: 260 } },
+        async (decodedText) => {
+          if (qrScanHandledRef.current) return
+
+          qrScanHandledRef.current = true
+          scanner.pause(true)
+          setQrScanPaused(true)
+          await recordVisitFromQr(decodedText)
+        },
+        () => {}
+      )
+    }).then(() => {
       if (!cancelled) {
         setQrScanStatus('Point the camera at the customer visit QR.')
       }
     }).catch((err) => {
       if (!cancelled) {
-        setQrScanStatus(
-          err.message || 'Unable to start the camera. Allow camera access and try again.'
-        )
+        setQrScanStatus(getCameraStartupError(err))
       }
     })
 
