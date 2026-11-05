@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: barberbro
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build:all
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: admin@example.com
+      - key: ADMIN_PASSWORD_HASH
+        value: $2a$12$replace_with_bcrypt_hash
+      - key: EMAIL_HOST
+        value: smtp.gmail.com
+      - key: EMAIL_PORT
+        value: 587
+      - key: EMAIL_USER
+        value: your-email@gmail.com
+      - key: EMAIL_PASS
+        value: your_app_password
+      - key: EMAIL_FROM
+        value: BarberBro <your-email@gmail.com>

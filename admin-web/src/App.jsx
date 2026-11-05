@@ -1,0 +1,766 @@
+
+import { useCallback, useEffect, useState } from 'react'
+import { Html5QrcodeScanner } from 'html5-qrcode'
+import { api, getAdminToken, saveAdminToken, clearAdminToken } from './api'
+import './App.css'
+
+const target = 10
+
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('en-PH', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })
+}
+
+function formatDate(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleDateString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function normalizeCustomer(c) {
+  return {
+    id: c.id,
+    memberCode: c.member_code,
+    name: c.full_name,
+    phone: c.phone || '',
+    visits: Number(c.total_visits || 0),
+    stamps: Number(c.loyalty_stamps || 0),
+    spent: Number(c.total_spent || 0),
+    isActivated: Boolean(c.is_activated),
+  }
+}
+
+function normalizeVisit(v) {
+  return {
+    id: v.id,
+    customer: v.full_name,
+    service: v.service,
+    barber: v.barber_name || '—',
+    amount: Number(v.amount || 0),
+    date: formatDate(v.visited_at),
+  }
+}
+
+function App() {
+  const [token, setToken] = useState(() => getAdminToken())
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [customers, setCustomers] = useState([])
+  const [visits, setVisits] = useState([])
+  const [stats, setStats] = useState({
+    total_customers: 0,
+    visits_today: 0,
+    total_revenue: 0,
+  })
+  const [search, setSearch] = useState('')
+  const [activePage, setActivePage] = useState('Dashboard')
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [selectedCustomer, setSelectedCustomer] = useState(null)
+  const [service, setService] = useState('Classic Haircut')
+  const [amount, setAmount] = useState('100')
+  const [barber, setBarber] = useState('Michael')
+  const [showAddCustomer, setShowAddCustomer] = useState(false)
+  const [qrScannerOpen, setQrScannerOpen] = useState(false)
+  const [qrScanStatus, setQrScanStatus] = useState('')
+  const [qrPasteValue, setQrPasteValue] = useState('')
+  const [newName, setNewName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+
+  const logout = useCallback(() => {
+    clearAdminToken()
+    setToken('')
+    setPassword('')
+    setLoginError('')
+    setError('')
+    setNotice('')
+    setActivePage('Dashboard')
+  }, [])
+
+  const loadData = useCallback(async () => {
+    if (!token) return
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const [dashboard, customerRows, visitRows] = await Promise.all([
+        api.getDashboard(),
+        api.getCustomers(),
+        api.getVisits(),
+      ])
+
+      setStats(dashboard)
+      setCustomers(customerRows.map(normalizeCustomer))
+      setVisits(visitRows.map(normalizeVisit))
+    } catch (err) {
+      setError(err.message || 'Unable to load BarberBro data.')
+    } finally {
+      setLoading(false)
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!token) {
+      setCustomers([])
+      setVisits([])
+      setStats({ total_customers: 0, visits_today: 0, total_revenue: 0 })
+      setLoading(false)
+      return
+    }
+
+    loadData()
+  }, [loadData, token])
+
+  useEffect(() => {
+    if (!token) return undefined
+
+    const handleUnauthorized = () => {
+      logout()
+      setLoginError('Your session expired. Please sign in again.')
+    }
+
+    window.addEventListener('barberbro-admin-unauthorized', handleUnauthorized)
+    return () => {
+      window.removeEventListener('barberbro-admin-unauthorized', handleUnauthorized)
+    }
+  }, [logout, token])
+
+  useEffect(() => {
+    if (!qrScannerOpen) return undefined
+
+    let scanner = null
+
+    try {
+      scanner = new Html5QrcodeScanner(
+        'admin-qr-reader',
+        { fps: 10, qrbox: { width: 260, height: 260 } },
+        false
+      )
+
+      scanner.render(
+        async (decodedText) => {
+          await scanner.clear()
+          setQrScannerOpen(false)
+          await lookupCustomerByQr(decodedText)
+        },
+        () => {}
+      )
+    } catch (error) {
+      setQrScanStatus('Camera access is not available on this device.')
+    }
+
+    return () => {
+      if (scanner) {
+        scanner.clear().catch(() => {})
+      }
+    }
+  }, [lookupCustomerByQr, qrScannerOpen])
+
+  async function handleLogin(event) {
+    event.preventDefault()
+    setLoginError('')
+
+    if (!email.trim() || !password) {
+      setLoginError('Please enter your admin email and password.')
+      return
+    }
+
+    setLoginLoading(true)
+
+    try {
+      const result = await api.login(email.trim(), password)
+      if (!result?.token) {
+        throw new Error('The server did not return an admin token.')
+      }
+
+      saveAdminToken(result.token)
+      setToken(result.token)
+      setPassword('')
+      setNotice('')
+    } catch (err) {
+      setLoginError(
+        err.message === 'Failed to fetch'
+          ? 'Cannot connect to the server. Make sure the backend is running.'
+          : err.message
+      )
+    } finally {
+      setLoginLoading(false)
+    }
+  }
+
+  const lookupCustomerByQr = useCallback(async (payload) => {
+    const trimmedPayload = String(payload || '').trim()
+
+    if (!trimmedPayload) {
+      setQrScanStatus('Scan or enter a customer QR code first.')
+      return
+    }
+
+    setQrScanStatus('Looking up member...')
+
+    try {
+      const customer = await api.lookupCustomerByQr(trimmedPayload)
+      setQrScanStatus('')
+      setQrScannerOpen(false)
+      setQrPasteValue('')
+      setSearch(customer.member_code)
+      setActivePage('Customers')
+      setNotice(`${customer.full_name} found via QR. Member ID: ${customer.member_code}`)
+      await loadData()
+    } catch (err) {
+      setQrScanStatus(err.message || 'No customer matched this QR code.')
+    }
+  }, [loadData])
+
+  const eligible = customers.filter(c => c.stamps >= target).length
+
+  const filteredCustomers = customers.filter(c =>
+    `${c.name} ${c.phone} ${c.memberCode}`
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  )
+
+  const filteredVisits = visits.filter(v =>
+    `${v.customer} ${v.service} ${v.barber}`
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  )
+
+  function recordVisit(customer) {
+    if (customer.stamps >= target) {
+      setNotice(`${customer.name} has a reward ready. Redeem it before adding another stamp.`)
+      return
+    }
+
+    setSelectedCustomer(customer)
+    setService('Classic Haircut')
+    setAmount('100')
+    setBarber('Michael')
+    setNotice('')
+    setError('')
+  }
+
+  async function confirmVisit() {
+    if (!selectedCustomer || saving) return
+
+    const price = Number(amount)
+
+    if (!Number.isFinite(price) || price < 0 || amount.trim() === '') {
+      setError('Please enter a valid service amount.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await api.recordVisit({
+        customer_id: selectedCustomer.id,
+        service,
+        barber_name: barber,
+        amount: price,
+      })
+
+      setSelectedCustomer(null)
+      setNotice(`Visit recorded for ${selectedCustomer.name}. One stamp has been added.`)
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Failed to record visit.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function addCustomer(e) {
+    e.preventDefault()
+    if (saving) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      const customer = await api.addCustomer({
+        full_name: newName.trim(),
+        phone: newPhone.trim() || null,
+        email: newEmail.trim() || null,
+      })
+
+      setShowAddCustomer(false)
+      setNewName('')
+      setNewPhone('')
+      setNewEmail('')
+      setSearch('')
+      setNotice(`${customer.full_name} has been added successfully.`)
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Failed to add customer.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function createActivationCode(customer) {
+    if (!customer || saving) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      const result = await api.createActivationCode(customer.id)
+      setNotice(
+        `${customer.name} can activate with member code ${result.member_code} and code ${result.code}.`
+      )
+    } catch (err) {
+      setError(err.message || 'Failed to create activation code.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function redeemReward(customer) {
+    if (customer.stamps < target || saving) return
+
+    const confirmed = window.confirm(
+      `Redeem the loyalty reward for ${customer.name}? This will reset their ${target} stamps.`
+    )
+
+    if (!confirmed) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await api.redeemReward(customer.id)
+      setNotice(`Reward redeemed for ${customer.name}.`)
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Failed to redeem reward.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!token) {
+    return (
+      <div className="admin-app admin-login-shell">
+        <main className="admin-login-card">
+          <div className="admin-login-brand">
+            <div className="admin-login-mark">B<span>.</span></div>
+            <div>
+              <div className="admin-login-wordmark">BARBER<span>BRO</span></div>
+              <div className="admin-login-subtitle">MANAGEMENT PORTAL</div>
+            </div>
+          </div>
+
+          <div className="admin-login-eyebrow"><span /> ADMIN ACCESS</div>
+          <h1>Welcome <span>back.</span></h1>
+          <p className="admin-login-copy">
+            Sign in to manage memberships, visits, rewards, and daily shop activity.
+          </p>
+
+          <form className="admin-login-form" onSubmit={handleLogin}>
+            <label htmlFor="admin-email">Email address</label>
+            <input
+              id="admin-email"
+              type="email"
+              autoComplete="username"
+              placeholder="admin@example.com"
+              value={email}
+              onChange={event => setEmail(event.target.value)}
+              required
+            />
+
+            <label htmlFor="admin-password">Password</label>
+            <input
+              id="admin-password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={event => setPassword(event.target.value)}
+              required
+            />
+
+            {loginError && <p className="admin-login-error">{loginError}</p>}
+
+            <button className="admin-primary admin-login-button" type="submit" disabled={loginLoading}>
+              {loginLoading ? 'Signing in...' : 'Sign in'}
+            </button>
+          </form>
+        </main>
+      </div>
+    )
+  }
+
+  return (
+    <div className="admin-app">
+      <aside className="admin-sidebar">
+        <a href="#dashboard" className="admin-brand">
+          <span className="admin-brand-icon">B</span>
+          <span>Barber<span className="admin-gold">Bro.</span></span>
+        </a>
+
+        <p className="admin-nav-label">WORKSPACE</p>
+
+        {[
+          ['Dashboard', '▦'],
+          ['Customers', '♙'],
+          ['Visit History', '◷'],
+          ['Rewards', '✦'],
+        ].map(([page, icon]) => (
+          <button
+            key={page}
+            className={`admin-nav-item ${activePage === page ? 'selected' : ''}`}
+            onClick={() => {
+              setActivePage(page)
+              setNotice('')
+              setError('')
+            }}
+          >
+            <span>{icon}</span>{page}
+          </button>
+        ))}
+
+        <div className="admin-sidebar-footer">
+          <div className="admin-avatar">MM</div>
+          <div>
+            <strong>Michael Malveda</strong>
+            <span>Shop Owner</span>
+          </div>
+        </div>
+        <button className="admin-logout-button" onClick={logout}>Log out</button>
+      </aside>
+
+      <main className="admin-main" id="dashboard">
+        <header className="admin-topbar">
+          <div>
+            <p className="admin-breadcrumb">
+              Michael's Barbershop / <strong>{activePage}</strong>
+            </p>
+            <h1>{activePage}</h1>
+          </div>
+          <div className="admin-open-label"><span /> Management Portal</div>
+        </header>
+
+        {notice && (
+          <div className="admin-notice">
+            <span>{notice}</span>
+            <button onClick={() => setNotice('')} aria-label="Dismiss message">×</button>
+          </div>
+        )}
+
+        {error && (
+          <div className="admin-notice" role="alert">
+            <span>{error}</span>
+            <button onClick={() => setError('')} aria-label="Dismiss error">×</button>
+          </div>
+        )}
+
+        {loading && <p className="admin-empty">Loading data from BarberBro database...</p>}
+
+        {!loading && error && (
+          <button className="admin-outline" onClick={loadData}>Try again</button>
+        )}
+
+        {activePage === 'Dashboard' && !loading && (
+          <>
+            <section className="admin-welcome">
+              <div>
+                <p className="admin-eyebrow">SHOP OVERVIEW</p>
+                <h2>Good day, Michael <span>✦</span></h2>
+                <p>Here's what's happening with your membership program.</p>
+              </div>
+              <button className="admin-primary" onClick={() => setActivePage('Customers')}>
+                ＋ Record a Visit
+              </button>
+            </section>
+
+            <section className="admin-stats">
+              <article>
+                <span className="admin-stat-icon">♙</span>
+                <p>Total Members</p>
+                <strong>{stats.total_customers}</strong>
+                <small>Registered customers</small>
+              </article>
+              <article>
+                <span className="admin-stat-icon">✂</span>
+                <p>Visits Today</p>
+                <strong>{stats.visits_today}</strong>
+                <small>Recorded haircuts today</small>
+              </article>
+              <article>
+                <span className="admin-stat-icon">₱</span>
+                <p>Recorded Sales</p>
+                <strong>₱{formatMoney(stats.total_revenue)}</strong>
+                <small>Total recorded visit sales</small>
+              </article>
+              <article>
+                <span className="admin-stat-icon">✦</span>
+                <p>Rewards Ready</p>
+                <strong>{eligible}</strong>
+                <small>Members with {target} stamps</small>
+              </article>
+            </section>
+
+            <section className="admin-panel">
+              <div className="admin-panel-heading">
+                <div><h2>Customer Memberships</h2><p>Search members and record completed haircuts.</p></div>
+                <button className="admin-outline" onClick={() => setActivePage('Customers')}>All customers →</button>
+              </div>
+              <CustomerTable
+                customers={filteredCustomers.slice(0, 5)}
+                onRecord={recordVisit}
+                onRedeem={redeemReward}
+                onCreateCode={createActivationCode}
+              />
+            </section>
+
+            <section className="admin-panel">
+              <div className="admin-panel-heading">
+                <div><h2>Recent Visits</h2><p>Latest recorded haircut activity.</p></div>
+                <button className="admin-outline" onClick={() => setActivePage('Visit History')}>View history →</button>
+              </div>
+              <VisitTable visits={visits.slice(0, 5)} />
+            </section>
+          </>
+        )}
+
+        {activePage === 'Customers' && !loading && (
+          <section className="admin-panel">
+            <div className="admin-panel-heading">
+              <div><h2>Customer Directory</h2><p>Find members and manage their visits.</p></div>
+              <div className="admin-action-group">
+                <button className="admin-outline" onClick={() => setQrScannerOpen(true)}>◉ Scan QR</button>
+                <button className="admin-primary" onClick={() => setShowAddCustomer(true)}>＋ Add Customer</button>
+              </div>
+            </div>
+            <SearchBox search={search} setSearch={setSearch} />
+            <CustomerTable
+              customers={filteredCustomers}
+              onRecord={recordVisit}
+              onRedeem={redeemReward}
+              onCreateCode={createActivationCode}
+            />
+            <p className="admin-demo-note">Customer records are stored in your database.</p>
+          </section>
+        )}
+
+        {activePage === 'Visit History' && !loading && (
+          <section className="admin-panel">
+            <div className="admin-panel-heading">
+              <div><h2>Visit History</h2><p>Haircuts recorded in the database.</p></div>
+            </div>
+            <SearchBox search={search} setSearch={setSearch} />
+            <VisitTable visits={filteredVisits} />
+          </section>
+        )}
+
+        {activePage === 'Rewards' && !loading && (
+          <section className="admin-panel">
+            <div className="admin-panel-heading">
+              <div><h2>Loyalty Rewards</h2><p>Members qualify for a reward at {target} stamps.</p></div>
+            </div>
+            <CustomerTable
+              customers={customers.filter(c => c.stamps >= target)}
+              onRecord={recordVisit}
+              onRedeem={redeemReward}
+              onCreateCode={createActivationCode}
+            />
+            {eligible === 0 && <p className="admin-empty">No rewards are ready to redeem right now.</p>}
+          </section>
+        )}
+
+        <footer className="admin-footer">
+          BarberBro Management System · Michael's Barbershop
+        </footer>
+      </main>
+
+      {selectedCustomer && (
+        <div className="admin-modal-backdrop" onClick={() => !saving && setSelectedCustomer(null)}>
+          <section className="admin-modal" onClick={e => e.stopPropagation()}>
+            <button className="admin-modal-close" disabled={saving} onClick={() => setSelectedCustomer(null)}>×</button>
+            <p className="admin-eyebrow">NEW TRANSACTION</p>
+            <h2>Record a Haircut</h2>
+            <p className="admin-modal-customer">{selectedCustomer.name} · {selectedCustomer.memberCode}</p>
+
+            <label>Service
+              <select value={service} onChange={e => {
+                setService(e.target.value)
+                setAmount(
+                  e.target.value === 'Haircut + Styling' ? '150' :
+                  e.target.value === 'Haircut + Shave' ? '180' : '100'
+                )
+              }}>
+                <option>Classic Haircut</option>
+                <option>Haircut + Styling</option>
+                <option>Haircut + Shave</option>
+              </select>
+            </label>
+
+            <label>Barber
+              <select value={barber} onChange={e => setBarber(e.target.value)}>
+                <option>Michael</option>
+                <option>Barber 01</option>
+                <option>Barber 02</option>
+                <option>Barber 03</option>
+                <option>Barber 04</option>
+                <option>Barber 05</option>
+              </select>
+            </label>
+
+            <label>Amount paid (₱)
+              <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
+            </label>
+
+            <div className="admin-modal-info">
+              Confirm only after the haircut is completed and payment has been recorded. One stamp will be added.
+            </div>
+
+            <button className="admin-primary admin-confirm" disabled={saving} onClick={confirmVisit}>
+              {saving ? 'Saving...' : 'Confirm Completed Haircut'}
+            </button>
+          </section>
+        </div>
+      )}
+
+      {qrScannerOpen && (
+        <div className="admin-modal-backdrop" onClick={() => setQrScannerOpen(false)}>
+          <div className="admin-modal qr-scan-modal" onClick={e => e.stopPropagation()}>
+            <button type="button" className="admin-modal-close" onClick={() => setQrScannerOpen(false)}>×</button>
+            <p className="admin-eyebrow">MEMBER CHECK-IN</p>
+            <h2>Scan customer QR</h2>
+            <div id="admin-qr-reader" />
+            <div className="admin-qr-manual">
+              <input
+                value={qrPasteValue}
+                onChange={e => setQrPasteValue(e.target.value)}
+                placeholder="Or paste a QR payload"
+              />
+              <button type="button" className="admin-primary" onClick={() => lookupCustomerByQr(qrPasteValue)}>
+                Lookup
+              </button>
+            </div>
+            {qrScanStatus && <p className="admin-login-error">{qrScanStatus}</p>}
+          </div>
+        </div>
+      )}
+
+      {showAddCustomer && (
+        <div className="admin-modal-backdrop" onClick={() => !saving && setShowAddCustomer(false)}>
+          <form className="admin-modal" onSubmit={addCustomer} onClick={e => e.stopPropagation()}>
+            <button type="button" className="admin-modal-close" disabled={saving} onClick={() => setShowAddCustomer(false)}>×</button>
+            <p className="admin-eyebrow">MEMBERSHIP</p>
+            <h2>Add Customer</h2>
+
+            <label>Full name
+              <input required maxLength="120" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Customer's full name" />
+            </label>
+
+            <label>Phone number
+              <input maxLength="20" value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="09XXXXXXXXX" />
+            </label>
+
+            <label>Email (optional)
+              <input type="email" maxLength="150" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="customer@example.com" />
+            </label>
+
+            <button className="admin-primary admin-confirm" type="submit" disabled={saving}>
+              {saving ? 'Saving...' : 'Save Customer'}
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SearchBox({ search, setSearch }) {
+  return (
+    <div className="admin-search">
+      <span>⌕</span>
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, phone number, or member ID..." />
+      {search && <button onClick={() => setSearch('')}>Clear</button>}
+    </div>
+  )
+}
+
+function CustomerTable({ customers, onRecord, onRedeem, onCreateCode }) {
+  if (!customers.length) return <p className="admin-empty">No customers found.</p>
+
+  return (
+    <div className="admin-table-wrap">
+      <table className="admin-table">
+        <thead>
+          <tr><th>CUSTOMER</th><th>MEMBER ID</th><th>VISITS</th><th>STAMP PROGRESS</th><th>STATUS</th><th>ACTION</th></tr>
+        </thead>
+        <tbody>
+          {customers.map(c => (
+            <tr key={c.id}>
+              <td><strong>{c.name}</strong><span className="admin-cell-sub">{c.phone || 'No phone provided'}</span></td>
+              <td>{c.memberCode}</td>
+              <td>{c.visits}</td>
+              <td>
+                <div className="admin-progress"><span style={{ width: `${Math.min(c.stamps / target * 100, 100)}%` }} /></div>
+                <span className="admin-cell-sub">{c.stamps}/{target} stamps</span>
+              </td>
+              <td>
+                <span className={`admin-tag ${c.isActivated ? (c.stamps >= target ? 'ready' : 'active-tag') : 'active-tag'}`}>
+                  {c.isActivated ? (c.stamps >= target ? 'Reward ready' : 'Active') : 'Needs activation'}
+                </span>
+              </td>
+              <td className="admin-actions">
+                {!c.isActivated ? (
+                  <button disabled={!onCreateCode} className="admin-action-button" onClick={() => onCreateCode(c)}>Generate code</button>
+                ) : c.stamps >= target ? (
+                  <button disabled={!onRedeem} className="admin-action-button reward-button" onClick={() => onRedeem(c)}>Redeem</button>
+                ) : (
+                  <button className="admin-action-button" onClick={() => onRecord(c)}>+ Visit</button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function VisitTable({ visits }) {
+  if (!visits.length) return <p className="admin-empty">No visits found.</p>
+
+  return (
+    <div className="admin-table-wrap">
+      <table className="admin-table">
+        <thead><tr><th>CUSTOMER</th><th>SERVICE</th><th>BARBER</th><th>DATE</th><th>AMOUNT</th></tr></thead>
+        <tbody>
+          {visits.map((v, i) => (
+            <tr key={v.id ?? `${v.customer}-${i}`}>
+              <td><strong>{v.customer}</strong></td>
+              <td>{v.service}</td>
+              <td>{v.barber}</td>
+              <td>{v.date}</td>
+              <td>₱{formatMoney(v.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export default App
