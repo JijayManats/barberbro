@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-qr-code": "^2.2.0"

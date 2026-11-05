@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BarberBroCustomer</string>
+    <string name="title_activity_main">BarberBroCustomer</string>
+    <string name="package_name">com.barberbro.customer</string>
+    <string name="custom_url_scheme">com.barberbro.customer</string>
+</resources>
