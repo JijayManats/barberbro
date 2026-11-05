@@ -341,7 +341,10 @@ function App() {
 
     async function startScanner() {
       try {
-        const { BrowserCodeReader, BrowserQRCodeReader } = await import('@zxing/browser')
+        const [{ BrowserCodeReader, BrowserQRCodeReader }, { DecodeHintType }] = await Promise.all([
+          import('@zxing/browser'),
+          import('@zxing/library'),
+        ])
         if (cancelled) return
 
         const cameras = await BrowserCodeReader.listVideoInputDevices()
@@ -350,14 +353,24 @@ function App() {
           throw new Error('No camera was detected on this device.')
         }
 
-        const scanner = new BrowserQRCodeReader()
+        const scanner = new BrowserQRCodeReader(
+          new Map([[DecodeHintType.TRY_HARDER, true]]),
+          { delayBetweenScanAttempts: 250 }
+        )
         const rearCamera = cameras.find((camera) =>
           /back|rear|environment|world/i.test(camera.label)
         )
         const camera = rearCamera || cameras[0]
 
-        controls = await scanner.decodeFromVideoDevice(
-          camera?.deviceId,
+        setQrScanStatus('Starting camera and focusing on the QR code...')
+        controls = await scanner.decodeFromConstraints(
+          {
+            video: {
+              deviceId: { exact: camera.deviceId },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+          },
           qrVideoRef.current,
           (result, _decodeError, scanControls) => {
             if (!result || qrScanHandledRef.current) return
@@ -376,7 +389,7 @@ function App() {
         }
 
         qrScannerControlsRef.current = controls
-        setQrScanStatus('Point the camera at the customer visit QR.')
+        setQrScanStatus('Camera is ready. Hold the full QR code steady inside the frame.')
       } catch (err) {
         if (cancelled) return
         setQrScanStatus(getCameraStartupError(err))
