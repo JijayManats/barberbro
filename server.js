@@ -44,19 +44,23 @@ const customerDistPath = path.join(__dirname, "customer-app", "dist");
 
 if (fs.existsSync(adminDistPath)) {
   app.use("/admin", express.static(adminDistPath));
-  app.get(/^\/admin\/(.*)$/, (req, res) => {
+  app.get(/^\/admin(?:\/.*)?$/, (req, res) => {
     res.sendFile(path.join(adminDistPath, "index.html"));
   });
 }
 
 if (fs.existsSync(customerDistPath)) {
-  app.use(express.static(customerDistPath));
-  app.get(/^(?!\/api|\/admin).*/, (req, res) => {
+  app.use("/customer", express.static(customerDistPath));
+  app.get(/^\/customer(?:\/.*)?$/, (req, res) => {
     res.sendFile(path.join(customerDistPath, "index.html"));
   });
 }
 
 app.get("/", (req, res) => {
+  if (fs.existsSync(adminDistPath)) {
+    return res.sendFile(path.join(adminDistPath, "index.html"));
+  }
+
   if (fs.existsSync(customerDistPath)) {
     return res.sendFile(path.join(customerDistPath, "index.html"));
   }
