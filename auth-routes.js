@@ -44,6 +44,15 @@ function buildCustomerQrPayload(customer) {
   return `barberbro://member/${customerId}/${encodeURIComponent(memberCode)}`;
 }
 
+function buildCustomerQrImageUrl(customer) {
+  const qrPayload = buildCustomerQrPayload(customer);
+  if (!qrPayload) {
+    return "";
+  }
+
+  return `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qrPayload)}&size=220x220&margin=1&ecc=M&color=171a2c&bgcolor=fffaf4`;
+}
+
 function getCustomerDisplayName(customer) {
   const fullName = String(customer?.full_name || "").trim();
   if (fullName) return fullName;
@@ -76,12 +85,7 @@ QR payload: ${buildCustomerQrPayload(customer)}`;
     return { sent: false, reason: "smtp-missing", preview };
   }
 
-  const qrDataUrl = await QRCode.toDataURL(buildCustomerQrPayload(customer), {
-    errorCorrectionLevel: "M",
-    margin: 1,
-    width: 220,
-    color: { dark: "#171a2c", light: "#fffaf4" },
-  });
+  const qrImageUrl = buildCustomerQrImageUrl(customer);
 
   const transporter = nodemailer.createTransport({
     host,
@@ -100,7 +104,7 @@ QR payload: ${buildCustomerQrPayload(customer)}`;
         <div style="padding: 0 28px 28px; background: #fffaf4; color: #171a2c;">
           <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding-top: 28px;">
             <div style="background: linear-gradient(135deg, #f3cf6b 0%, #dba95a 100%); border-radius: 18px; padding: 18px; text-align: center; min-width: 220px;">
-              <img src="${qrDataUrl}" alt="BarberBro member QR code" style="display: block; width: 180px; height: 180px; margin: 0 auto; background: white; border-radius: 16px; padding: 8px;" />
+              ${qrImageUrl ? `<img src="${qrImageUrl}" alt="BarberBro member QR code" style="display: block; width: 180px; height: 180px; margin: 0 auto; background: white; border-radius: 16px; padding: 8px;" />` : `<div style="display:block;width:180px;height:180px;border-radius:16px;background:#f3efe9;display:flex;align-items:center;justify-content:center;color:#171a2c;font-weight:700;">QR</div>`}
             </div>
             <div>
               <div style="font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #5a5447;">Member ID</div>
@@ -111,9 +115,7 @@ QR payload: ${buildCustomerQrPayload(customer)}`;
               </div>
             </div>
           </div>
-          <div style="margin-top: 20px; font-size: 14px; line-height: 1.7; color: #4b4b4b;">
-            Use your member ID and activation code on the BarberBro customer app to finish setting up your account. Keep this email handy ? your QR card is also your quick check-in ID.
-          </div>
+          <div style="margin-top: 20px; font-size: 14px; line-height: 1.7; color: #4b4b4b;">Use your member ID and activation code on the BarberBro customer app to finish setting up your account. Keep this email handy — your QR card is also your quick check-in ID.</div>
         </div>
       </div>
     </div>
