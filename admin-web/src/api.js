@@ -1,5 +1,20 @@
-const API_URL =
-  import.meta.env.VITE_API_URL || "https://barberbro-1.onrender.com/api";
+function resolveApiUrl() {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname || "";
+
+    if (host.includes("localhost") || host.includes("127.0.0.1")) {
+      return "http://localhost:5000/api";
+    }
+
+    if (host.includes("onrender.com") || host.includes("render.com")) {
+      return "https://barberbro-1.onrender.com/api";
+    }
+  }
+
+  return import.meta.env.VITE_API_URL || "https://barberbro-1.onrender.com/api";
+}
+
+const API_URL = resolveApiUrl();
 
 const TOKEN_KEY = "barberbro_admin_token";
 
