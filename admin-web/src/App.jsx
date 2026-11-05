@@ -1,6 +1,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Html5Qrcode } from 'html5-qrcode'
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
 import { api, getAdminToken, saveAdminToken, clearAdminToken } from './api'
 import './App.css'
 
@@ -246,7 +246,9 @@ function App() {
 
     let cancelled = false
     let startTask
-    const scanner = new Html5Qrcode('admin-qr-reader')
+    const scanner = new Html5Qrcode('admin-qr-reader', {
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+    })
     qrScannerRef.current = scanner
     qrScanHandledRef.current = false
 
@@ -262,12 +264,20 @@ function App() {
       const camera = rearCamera || cameras[0]
 
       return scanner.start(
-        camera.id,
-        { fps: 10, qrbox: { width: 260, height: 260 } },
+        { deviceId: { exact: camera.id } },
+        {
+          fps: 15,
+          videoConstraints: {
+            deviceId: { exact: camera.id },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        },
         async (decodedText) => {
           if (qrScanHandledRef.current) return
 
           qrScanHandledRef.current = true
+          setQrScanStatus('QR detected. Recording visit...')
           scanner.pause(true)
           setQrScanPaused(true)
           await recordVisitFromQr(decodedText)
@@ -950,7 +960,7 @@ function App() {
             <p className="admin-eyebrow">CUSTOMER VISIT</p>
             <h2>Scan to record visit</h2>
             <p className="admin-scan-instructions">
-              Point the camera at the visit QR in the customer app. The visit details will be recorded automatically.
+              Hold the customer app QR steady, fully inside the camera view, and make sure it is well lit. The visit will record automatically when detected.
             </p>
             <div id="admin-qr-reader" />
             {qrScanPaused && (
