@@ -135,9 +135,4 @@ export const api = {
       method: "DELETE",
     }),
 
-  lookupCustomerByQr: (qrPayload) =>
-    request("/customers/lookup", {
-      method: "POST",
-      body: JSON.stringify({ qr_payload: qrPayload }),
-    }),
 };

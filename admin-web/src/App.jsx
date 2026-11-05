@@ -1,6 +1,6 @@
 
-import { useCallback, useEffect, useState } from 'react'
-import { Html5QrcodeScanner } from 'html5-qrcode'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Html5Qrcode } from 'html5-qrcode'
 import { api, getAdminToken, saveAdminToken, clearAdminToken } from './api'
 import './App.css'
 
@@ -49,21 +49,25 @@ function normalizeVisit(v) {
 function parseVisitQrPayload(rawPayload) {
   const trimmedPayload = String(rawPayload || '').trim()
 
-  if (!trimmedPayload || !trimmedPayload.startsWith('barberbro://visit/')) {
+  if (!trimmedPayload) {
     return null
   }
 
   try {
     const parsedUrl = new URL(trimmedPayload)
-    const pathname = parsedUrl.pathname || ''
-    const match = pathname.match(/\/([0-9]+)\/[^/]+$/)
+    const visitPath = parsedUrl.protocol.toLowerCase() === 'barberbro:' &&
+      parsedUrl.hostname.toLowerCase() === 'visit'
+    const match = visitPath && parsedUrl.pathname.match(/^\/([0-9]+)\/([^/]+)\/?$/)
     const customerId = match ? Number(match[1]) : null
     const params = parsedUrl.searchParams
     const service = String(params.get('service') || '').trim()
     const barber = String(params.get('barber') || '').trim()
-    const amount = Number(params.get('amount') || 0)
+    const amountValue = params.get('amount')
+    const amount = Number(amountValue)
 
-    if (!customerId || !service || !barber || !Number.isFinite(amount) || amount < 0) {
+    if (!customerId || !match?.[2] || !service || !barber ||
+        amountValue === null || amountValue.trim() === '' ||
+        !Number.isFinite(amount) || amount < 0) {
       return null
     }
 
@@ -104,7 +108,9 @@ function App() {
   const [showAddCustomer, setShowAddCustomer] = useState(false)
   const [qrScannerOpen, setQrScannerOpen] = useState(false)
   const [qrScanStatus, setQrScanStatus] = useState('')
-  const [qrPasteValue, setQrPasteValue] = useState('')
+  const [qrScanPaused, setQrScanPaused] = useState(false)
+  const qrScannerRef = useRef(null)
+  const qrScanHandledRef = useRef(false)
   const [newName, setNewName] = useState('')
   const [newPhone, setNewPhone] = useState('')
   const [newEmail, setNewEmail] = useState('')
@@ -200,7 +206,6 @@ function App() {
 
       setQrScanStatus('')
       setQrScannerOpen(false)
-      setQrPasteValue('')
       setNotice(`Visit recorded for ${visitPayload.service} by ${visitPayload.barber_name}.`)
       await loadData()
       return response
@@ -210,65 +215,60 @@ function App() {
     }
   }, [loadData])
 
-  const lookupCustomerByQr = useCallback(async (payload) => {
-    const trimmedPayload = String(payload || '').trim()
-
-    if (!trimmedPayload) {
-      setQrScanStatus('Scan or enter a customer QR code first.')
-      return
-    }
-
-    if (trimmedPayload.startsWith('barberbro://visit/')) {
-      await recordVisitFromQr(trimmedPayload)
-      return
-    }
-
-    setQrScanStatus('Looking up member...')
-
-    try {
-      const customer = await api.lookupCustomerByQr(trimmedPayload)
-      setQrScanStatus('')
-      setQrScannerOpen(false)
-      setQrPasteValue('')
-      setSearch(customer.member_code)
-      setActivePage('Customers')
-      setNotice(`${customer.full_name} found via QR. Member ID: ${customer.member_code}`)
-      await loadData()
-    } catch (err) {
-      setQrScanStatus(err.message || 'No customer matched this QR code.')
-    }
-  }, [loadData, recordVisitFromQr])
-
   useEffect(() => {
     if (!qrScannerOpen) return undefined
 
-    let scanner = null
+    let cancelled = false
+    let startTask
+    const scanner = new Html5Qrcode('admin-qr-reader')
+    qrScannerRef.current = scanner
+    qrScanHandledRef.current = false
 
-    try {
-      scanner = new Html5QrcodeScanner(
-        'admin-qr-reader',
-        { fps: 10, qrbox: { width: 260, height: 260 } },
-        false
-      )
+    startTask = scanner.start(
+      { facingMode: { ideal: 'environment' } },
+      { fps: 10, qrbox: { width: 260, height: 260 } },
+      async (decodedText) => {
+        if (qrScanHandledRef.current) return
 
-      scanner.render(
-        async (decodedText) => {
-          await scanner.clear()
-          setQrScannerOpen(false)
-          await lookupCustomerByQr(decodedText)
-        },
-        () => {}
-      )
-    } catch (error) {
-      setQrScanStatus('Camera access is not available on this device.')
-    }
+        qrScanHandledRef.current = true
+        scanner.pause(true)
+        setQrScanPaused(true)
+        await recordVisitFromQr(decodedText)
+      },
+      () => {}
+    ).then(() => {
+      if (!cancelled) {
+        setQrScanStatus('Point the camera at the customer visit QR.')
+      }
+    }).catch((err) => {
+      if (!cancelled) {
+        setQrScanStatus(
+          err.message || 'Unable to start the camera. Allow camera access and try again.'
+        )
+      }
+    })
 
     return () => {
-      if (scanner) {
-        scanner.clear().catch(() => {})
-      }
+      cancelled = true
+      qrScannerRef.current = null
+      startTask.then(async () => {
+        if (scanner.isScanning) await scanner.stop()
+        scanner.clear()
+      }).catch((err) => {
+        console.error('Unable to stop the QR scanner cleanly:', err)
+      })
     }
-  }, [lookupCustomerByQr, qrScannerOpen])
+  }, [qrScannerOpen, recordVisitFromQr])
+
+  function resumeQrScanner() {
+    const scanner = qrScannerRef.current
+    if (!scanner?.isScanning) return
+
+    qrScanHandledRef.current = false
+    setQrScanPaused(false)
+    setQrScanStatus('Point the camera at the customer visit QR.')
+    scanner.resume()
+  }
 
   async function handleLogin(event) {
     event.preventDefault()
@@ -822,7 +822,16 @@ function App() {
             <div className="admin-panel-heading">
               <div><h2>Customer Directory</h2><p>Find members and manage their accounts.</p></div>
               <div className="admin-action-group">
-                <button className="admin-outline" onClick={() => setQrScannerOpen(true)}>◉ Scan QR</button>
+                <button
+                  className="admin-outline"
+                  onClick={() => {
+                    setQrScanStatus('Starting camera...')
+                    setQrScanPaused(false)
+                    setQrScannerOpen(true)
+                  }}
+                >
+                  ◉ Scan Visit QR
+                </button>
                 <button className="admin-primary" onClick={() => setShowAddCustomer(true)}>＋ Add Customer</button>
               </div>
             </div>
@@ -902,19 +911,17 @@ function App() {
         <div className="admin-modal-backdrop" onClick={() => setQrScannerOpen(false)}>
           <div className="admin-modal qr-scan-modal" onClick={e => e.stopPropagation()}>
             <button type="button" className="admin-modal-close" onClick={() => setQrScannerOpen(false)}>×</button>
-            <p className="admin-eyebrow">MEMBER CHECK-IN</p>
-            <h2>Scan customer QR</h2>
+            <p className="admin-eyebrow">CUSTOMER VISIT</p>
+            <h2>Scan to record visit</h2>
+            <p className="admin-scan-instructions">
+              Point the camera at the visit QR in the customer app. The visit details will be recorded automatically.
+            </p>
             <div id="admin-qr-reader" />
-            <div className="admin-qr-manual">
-              <input
-                value={qrPasteValue}
-                onChange={e => setQrPasteValue(e.target.value)}
-                placeholder="Or paste a QR payload"
-              />
-              <button type="button" className="admin-primary" onClick={() => lookupCustomerByQr(qrPasteValue)}>
-                Lookup
+            {qrScanPaused && (
+              <button type="button" className="admin-outline admin-scan-again" onClick={resumeQrScanner}>
+                Scan another QR
               </button>
-            </div>
+            )}
             {qrScanStatus && <p className="admin-login-error">{qrScanStatus}</p>}
           </div>
         </div>
