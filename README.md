@@ -110,6 +110,8 @@ For Render, set `RESEND_API_KEY` and set `EMAIL_FROM` to a sender address on a d
 
 The admin portal refreshes shared records every 10 seconds while open. The customer app refreshes membership and visit history every 10 seconds and the active barber list every 30 seconds; both refresh sooner when brought back to the foreground.
 
+The admin visit scanner uses ZXing with jsQR as a second live-camera decoder, including inverted QR handling. If camera scanning is unreliable, use **Scan QR from image** to decode a saved QR screenshot. The deployed admin page must use HTTPS for camera access.
+
 ## Admin credentials
 
 Set `ADMIN_EMAIL` and `ADMIN_PASSWORD_HASH` in your environment. The password hash should be a bcrypt hash generated from the desired admin password.

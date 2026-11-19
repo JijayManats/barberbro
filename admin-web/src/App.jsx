@@ -45,6 +45,25 @@ function normalizeVisit(v) {
   }
 }
 
+async function decodeQrImage(file) {
+  const { default: jsQR } = await import('jsqr')
+  const bitmap = await createImageBitmap(file)
+  const canvas = document.createElement('canvas')
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height))
+  canvas.width = Math.round(bitmap.width * scale)
+  canvas.height = Math.round(bitmap.height * scale)
+
+  try {
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) throw new Error('This browser cannot read the selected image.')
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    const image = context.getImageData(0, 0, canvas.width, canvas.height)
+    return jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' })?.data || ''
+  } finally {
+    bitmap.close()
+  }
+}
+
 function parseVisitQrPayload(rawPayload, barberRows = []) {
   const trimmedPayload = String(rawPayload || '').trim()
 
@@ -187,7 +206,9 @@ function App() {
   const qrScanHandledRef = useRef(false)
   const [qrScannerRestartKey, setQrScannerRestartKey] = useState(0)
   const qrVideoRef = useRef(null)
+  const qrImageInputRef = useRef(null)
   const qrScannerControlsRef = useRef(null)
+  const qrFallbackTimerRef = useRef(null)
   const barbersRef = useRef(barbers)
   const recordVisitHandlerRef = useRef(null)
   const [newName, setNewName] = useState('')
@@ -201,6 +222,18 @@ function App() {
   const [editingRewardId, setEditingRewardId] = useState(null)
   const [rewardModalOpen, setRewardModalOpen] = useState(false)
   const dataRefreshInFlightRef = useRef(null)
+
+  const handleDetectedQr = useCallback((payload, scanControls) => {
+    if (qrScanHandledRef.current) return
+
+    qrScanHandledRef.current = true
+    setQrScanStatus('QR detected. Recording visit...')
+    setQrScanPaused(true)
+    scanControls?.stop()
+    qrScannerControlsRef.current?.stop()
+    window.clearInterval(qrFallbackTimerRef.current)
+    recordVisitHandlerRef.current?.(payload)
+  }, [])
 
   const logout = useCallback(() => {
     clearAdminToken()
@@ -341,9 +374,14 @@ function App() {
 
     async function startScanner() {
       try {
-        const [{ BrowserCodeReader, BrowserQRCodeReader }, { DecodeHintType }] = await Promise.all([
+        const [
+          { BrowserCodeReader, BrowserQRCodeReader },
+          { DecodeHintType },
+          { default: jsQR },
+        ] = await Promise.all([
           import('@zxing/browser'),
           import('@zxing/library'),
+          import('jsqr'),
         ])
         if (cancelled) return
 
@@ -372,24 +410,46 @@ function App() {
             },
           },
           qrVideoRef.current,
-          (result, _decodeError, scanControls) => {
-            if (!result || qrScanHandledRef.current) return
-
-            qrScanHandledRef.current = true
-            setQrScanStatus('QR detected. Recording visit...')
-            setQrScanPaused(true)
-            scanControls.stop()
-            recordVisitHandlerRef.current?.(result.getText())
-          }
+          (result, _decodeError, scanControls) =>
+            result && handleDetectedQr(result.getText(), scanControls)
         )
 
-        if (cancelled) {
+        if (cancelled || qrScanHandledRef.current) {
           controls.stop()
           return
         }
 
         qrScannerControlsRef.current = controls
-        setQrScanStatus('Camera is ready. Hold the full QR code steady inside the frame.')
+        const fallbackCanvas = document.createElement('canvas')
+        const fallbackContext = fallbackCanvas.getContext('2d', { willReadFrequently: true })
+        if (!fallbackContext) {
+          throw new Error('The browser could not initialize QR camera decoding.')
+        }
+
+        let fallbackBusy = false
+        qrFallbackTimerRef.current = window.setInterval(() => {
+          const video = qrVideoRef.current
+          if (cancelled || fallbackBusy || qrScanHandledRef.current ||
+              !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+              !video.videoWidth || !video.videoHeight) return
+
+          fallbackBusy = true
+          try {
+            const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight))
+            fallbackCanvas.width = Math.round(video.videoWidth * scale)
+            fallbackCanvas.height = Math.round(video.videoHeight * scale)
+            fallbackContext.drawImage(video, 0, 0, fallbackCanvas.width, fallbackCanvas.height)
+            const frame = fallbackContext.getImageData(0, 0, fallbackCanvas.width, fallbackCanvas.height)
+            const result = jsQR(frame.data, frame.width, frame.height, {
+              inversionAttempts: 'attemptBoth',
+            })
+            if (result) handleDetectedQr(result.data)
+          } finally {
+            fallbackBusy = false
+          }
+        }, 300)
+
+        setQrScanStatus('Camera ready. ZXing and jsQR are scanning; hold the full code in view.')
       } catch (err) {
         if (cancelled) return
         setQrScanStatus(getCameraStartupError(err))
@@ -400,10 +460,31 @@ function App() {
 
     return () => {
       cancelled = true
+      window.clearInterval(qrFallbackTimerRef.current)
+      qrFallbackTimerRef.current = null
       qrScannerControlsRef.current?.stop()
       qrScannerControlsRef.current = null
     }
-  }, [qrScannerOpen, qrScannerRestartKey])
+  }, [handleDetectedQr, qrScannerOpen, qrScannerRestartKey])
+
+  async function handleQrImageChange(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setQrScanStatus('Reading QR code from image...')
+    try {
+      const payload = await decodeQrImage(file)
+      if (!payload) {
+        setQrScanStatus('No QR code was found in that image. Try a sharper, uncropped image.')
+        return
+      }
+
+      handleDetectedQr(payload)
+    } catch (err) {
+      setQrScanStatus(err.message || 'Unable to read a QR code from that image.')
+    }
+  }
 
   function resumeQrScanner() {
     qrScanHandledRef.current = false
@@ -1033,13 +1114,29 @@ function App() {
               muted
               playsInline
             />
+            <div className="admin-scan-actions">
+              <button
+                type="button"
+                className="admin-outline"
+                onClick={() => qrImageInputRef.current?.click()}
+              >
+                Scan QR from image
+              </button>
+              <input
+                ref={qrImageInputRef}
+                className="admin-scan-image-input"
+                type="file"
+                accept="image/*"
+                onChange={handleQrImageChange}
+              />
+            </div>
             {qrScanPaused && (
               <button type="button" className="admin-outline admin-scan-again" onClick={resumeQrScanner}>
                 Scan another QR
               </button>
             )}
             {qrScanStatus && (
-              <p className={`admin-scan-status ${/unable|invalid|failed|not valid|no camera|blocked|not found/i.test(qrScanStatus) ? 'admin-scan-status-error' : ''}`}>
+              <p className={`admin-scan-status ${/unable|invalid|failed|not valid|no camera|blocked|not found|no qr code/i.test(qrScanStatus) ? 'admin-scan-status-error' : ''}`}>
                 {qrScanStatus}
               </p>
             )}
