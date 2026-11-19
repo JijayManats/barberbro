@@ -680,6 +680,86 @@ router.post("/customers/:id/activation-code", async (req, res) => {
   }
 });
 
+router.post("/customers/:id/activation-code/resend", async (req, res) => {
+  try {
+    const customerId = Number(req.params.id);
+
+    if (!Number.isInteger(customerId) || customerId <= 0) {
+      return res.status(400).json({ error: "Invalid customer ID" });
+    }
+
+    const customerResult = await pool.query(
+      `SELECT id, member_code, full_name, email, password_hash
+       FROM customers
+       WHERE id = $1`,
+      [customerId]
+    );
+
+    if (customerResult.rowCount === 0) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    const customer = customerResult.rows[0];
+    if (customer.password_hash) {
+      return res.status(409).json({
+        error: "This customer already has an activated account.",
+      });
+    }
+
+    if (!customer.email) {
+      return res.status(400).json({
+        error: "This customer does not have an email address.",
+      });
+    }
+
+    const activationResult = await pool.query(
+      `SELECT code
+       FROM customer_activation_codes
+       WHERE customer_id = $1
+         AND used_at IS NULL
+         AND expires_at > NOW()
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [customer.id]
+    );
+
+    if (activationResult.rowCount === 0) {
+      return res.status(404).json({
+        error: "No active activation code is available. Generate a new code first.",
+      });
+    }
+
+    let emailResult;
+    try {
+      emailResult = await sendMemberCardEmail(
+        customer,
+        activationResult.rows[0].code
+      );
+    } catch (emailError) {
+      console.error("Activation email retry failed:", emailError.message);
+      emailResult = {
+        sent: false,
+        reason: "email-send-failed",
+        error: emailError.message,
+      };
+    }
+
+    return res.json({
+      message: emailResult.sent
+        ? "Activation email accepted by the mail provider."
+        : "Activation email could not be sent.",
+      email: customer.email,
+      email_sent: emailResult.sent,
+      email_error: emailResult.sent
+        ? null
+        : (emailResult.error || emailResult.reason || "Email sending failed"),
+    });
+  } catch (error) {
+    console.error("Activation email retry failed:", error.message);
+    return res.status(500).json({ error: "Failed to retry the activation email" });
+  }
+});
+
 router.post("/customers/lookup", async (req, res) => {
   try {
     const qrPayload = typeof req.body?.qr_payload === "string"

@@ -280,6 +280,7 @@ function App() {
   const [activePage, setActivePage] = useState('Dashboard')
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [activationEmailRetryCustomer, setActivationEmailRetryCustomer] = useState(null)
   const [loading, setLoading] = useState(true)
   const [lastRefreshedAt, setLastRefreshedAt] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -328,6 +329,7 @@ function App() {
     setLoginError('')
     setError('')
     setNotice('')
+    setActivationEmailRetryCustomer(null)
     setActivePage('Dashboard')
   }, [])
 
@@ -681,6 +683,7 @@ function App() {
     setSaving(true)
     setError('')
     setNotice('')
+    setActivationEmailRetryCustomer(null)
 
     try {
       const result = await api.createActivationCode(customer.id)
@@ -691,14 +694,49 @@ function App() {
         setNotice(`${activationDetails} Email accepted by the mail server for ${result.email}.`)
       } else {
         setNotice(activationDetails)
+        if (result.email) {
+          setActivationEmailRetryCustomer({
+            id: customer.id,
+            email: result.email,
+          })
+        }
         setError(
           `The activation code was generated, but the email was NOT sent${result.email ? ` to ${result.email}` : ''}. ` +
           `${result.email_error || 'No email delivery details were returned.'} ` +
-          'For Render, set RESEND_API_KEY and a verified EMAIL_FROM sender; alternatively check the EMAIL_HOST, EMAIL_PORT, EMAIL_USER, and EMAIL_PASS SMTP settings.'
+          'For Render, configure RESEND_API_KEY and an EMAIL_FROM address verified by Resend. The existing code remains active for 24 hours.'
         )
       }
     } catch (err) {
       setError(err.message || 'Failed to create activation code.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function retryActivationEmail() {
+    if (!activationEmailRetryCustomer || saving) return
+
+    setSaving(true)
+    setError('')
+
+    try {
+      const result = await api.resendActivationEmail(activationEmailRetryCustomer.id)
+      if (!result.email_sent) {
+        setError(
+          `The email was not accepted for ${activationEmailRetryCustomer.email}. ` +
+          `${result.email_error || 'Check the email provider configuration.'} ` +
+          'For Render, configure RESEND_API_KEY and an EMAIL_FROM address verified by Resend.'
+        )
+        return
+      }
+
+      setNotice(`Activation email accepted by the mail provider for ${result.email}.`)
+      setActivationEmailRetryCustomer(null)
+    } catch (err) {
+      setError(
+        `${err.message || 'Failed to resend activation email.'} ` +
+        'For Render, configure RESEND_API_KEY and an EMAIL_FROM address verified by Resend.'
+      )
     } finally {
       setSaving(false)
     }
@@ -970,6 +1008,7 @@ function App() {
               setActivePage(page)
               setNotice('')
               setError('')
+              setActivationEmailRetryCustomer(null)
             }}
           >
             <span>{icon}</span>{page}
@@ -1012,13 +1051,29 @@ function App() {
         {error && (
           <div className="admin-notice" role="alert">
             <span>{error}</span>
-            <button onClick={() => setError('')} aria-label="Dismiss error">×</button>
+            {activationEmailRetryCustomer && (
+              <button
+                type="button"
+                className="admin-outline admin-email-retry"
+                disabled={saving}
+                onClick={retryActivationEmail}
+              >
+                {saving ? 'Sending...' : 'Retry activation email'}
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setError('')
+                setActivationEmailRetryCustomer(null)
+              }}
+              aria-label="Dismiss error"
+            >×</button>
           </div>
         )}
 
         {loading && <p className="admin-empty">Loading data from BarberBro database...</p>}
 
-        {!loading && error && (
+        {!loading && error && !activationEmailRetryCustomer && (
           <button className="admin-outline" onClick={loadData}>Try again</button>
         )}
 

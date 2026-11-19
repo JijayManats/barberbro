@@ -131,6 +131,11 @@ export const api = {
       method: "POST",
     }),
 
+  resendActivationEmail: (customerId) =>
+    request(`/customers/${customerId}/activation-code/resend`, {
+      method: "POST",
+    }),
+
   deleteCustomer: (customerId) =>
     request(`/customers/${customerId}`, {
       method: "DELETE",
