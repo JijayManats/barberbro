@@ -878,7 +878,9 @@ function App() {
                 <div className="panel visit-ticket-qr">
                   {generatedVisitQr ? (
                     <>
-                      <QRCode value={generatedVisitQr} size={280} level="L" bgColor="#fffaf4" fgColor="#171a2c" />
+                      <div className="visit-ticket-code-surface">
+                        <QRCode value={generatedVisitQr} size={210} level="M" bgColor="#fffaf4" fgColor="#171a2c" />
+                      </div>
                       <h2>Show this code to the admin</h2>
                       <p>{visitService} · {visitBarber} · {money(visitAmount)}</p>
                       <span className="ticket-member-code">{customer.member_code}</span>

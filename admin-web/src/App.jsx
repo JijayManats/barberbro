@@ -48,17 +48,65 @@ function normalizeVisit(v) {
 async function decodeQrImage(file) {
   const { default: jsQR } = await import('jsqr')
   const bitmap = await createImageBitmap(file)
-  const canvas = document.createElement('canvas')
-  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height))
-  canvas.width = Math.round(bitmap.width * scale)
-  canvas.height = Math.round(bitmap.height * scale)
 
   try {
-    const context = canvas.getContext('2d', { willReadFrequently: true })
-    if (!context) throw new Error('This browser cannot read the selected image.')
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-    const image = context.getImageData(0, 0, canvas.width, canvas.height)
-    return jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' })?.data || ''
+    const sources = [
+      { x: 0, y: 0, width: bitmap.width, height: bitmap.height },
+      {
+        x: bitmap.width * 0.1,
+        y: bitmap.height * 0.1,
+        width: bitmap.width * 0.8,
+        height: bitmap.height * 0.8,
+      },
+    ]
+
+    for (const source of sources) {
+      const scale = Math.min(3, 1800 / Math.max(source.width, source.height))
+      const width = Math.round(source.width * scale)
+      const height = Math.round(source.height * scale)
+      const imageCanvas = document.createElement('canvas')
+      imageCanvas.width = width
+      imageCanvas.height = height
+      const imageContext = imageCanvas.getContext('2d', { willReadFrequently: true })
+      if (!imageContext) throw new Error('This browser cannot read the selected image.')
+      imageContext.drawImage(
+        bitmap,
+        source.x,
+        source.y,
+        source.width,
+        source.height,
+        0,
+        0,
+        width,
+        height
+      )
+
+      const candidates = [imageCanvas]
+      const quietZone = Math.max(16, Math.round(Math.min(width, height) * 0.12))
+      for (const color of ['#fffaf4', '#171a2c']) {
+        const paddedCanvas = document.createElement('canvas')
+        paddedCanvas.width = width + quietZone * 2
+        paddedCanvas.height = height + quietZone * 2
+        const paddedContext = paddedCanvas.getContext('2d', { willReadFrequently: true })
+        if (!paddedContext) throw new Error('This browser cannot prepare the selected image.')
+        paddedContext.fillStyle = color
+        paddedContext.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height)
+        paddedContext.drawImage(imageCanvas, quietZone, quietZone)
+        candidates.push(paddedCanvas)
+      }
+
+      for (const candidate of candidates) {
+        const context = candidate.getContext('2d', { willReadFrequently: true })
+        if (!context) throw new Error('This browser cannot read the selected image.')
+        const image = context.getImageData(0, 0, candidate.width, candidate.height)
+        const result = jsQR(image.data, image.width, image.height, {
+          inversionAttempts: 'attemptBoth',
+        })
+        if (result?.data) return result.data
+      }
+    }
+
+    return ''
   } finally {
     bitmap.close()
   }
@@ -1120,7 +1168,7 @@ function App() {
                 className="admin-outline"
                 onClick={() => qrImageInputRef.current?.click()}
               >
-                Scan QR from image
+                Scan QR from image or screenshot
               </button>
               <input
                 ref={qrImageInputRef}

@@ -1,0 +1,6 @@
+BarberBro Customer Release v1.3
+- Adds a four-module light quiet zone around visit QR tickets for better scanner compatibility
+- Updates QR error correction to level M
+- Refreshes membership and visit history every 10 seconds and barber list every 30 seconds
+- Signed with the existing BarberBro Customer release certificate
+- App version 1.2 (version code 3); install over the existing app without uninstalling

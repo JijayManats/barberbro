@@ -915,6 +915,21 @@ button:disabled {
   text-align: center;
 }
 
+.visit-ticket-code-surface {
+  box-sizing: border-box;
+  width: 282px;
+  max-width: 100%;
+  padding: 36px;
+  border-radius: 8px;
+  background: #fffaf4;
+}
+
+.visit-ticket-code-surface svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .visit-ticket-qr h2,
 .visit-ticket-placeholder h2 {
   margin: 4px 0 0;
