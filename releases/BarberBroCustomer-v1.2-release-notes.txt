@@ -1,0 +1,6 @@
+BarberBro Customer Release v1.2
+- Includes the latest customer app updates from Nov 6, 2026
+- Refreshes membership and visit history every 10 seconds and barber list every 30 seconds
+- Generates compact BBV2 visit QR tickets for admin scanning
+- Signed with the existing BarberBro Customer release certificate
+- Version 1.1 (version code 2); install over the existing app without uninstalling
