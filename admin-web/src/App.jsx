@@ -45,8 +45,30 @@ function normalizeVisit(v) {
   }
 }
 
+function createQrDetector() {
+  if (typeof window.BarcodeDetector !== 'function') return null
+
+  try {
+    return new window.BarcodeDetector({ formats: ['qr_code'] })
+  } catch {
+    return null
+  }
+}
+
 async function decodeQrImage(file) {
-  const { default: jsQR } = await import('jsqr')
+  const [
+    { default: jsQR },
+    { BrowserQRCodeReader },
+    { DecodeHintType },
+  ] = await Promise.all([
+    import('jsqr'),
+    import('@zxing/browser'),
+    import('@zxing/library'),
+  ])
+  const qrReader = new BrowserQRCodeReader(
+    new Map([[DecodeHintType.TRY_HARDER, true]])
+  )
+  const nativeDetector = createQrDetector()
   const bitmap = await createImageBitmap(file)
 
   try {
@@ -96,6 +118,15 @@ async function decodeQrImage(file) {
       }
 
       for (const candidate of candidates) {
+        if (nativeDetector) {
+          try {
+            const results = await nativeDetector.detect(candidate)
+            if (results[0]?.rawValue) return results[0].rawValue
+          } catch {
+            // Some browsers expose BarcodeDetector but do not support canvas input.
+          }
+        }
+
         const context = candidate.getContext('2d', { willReadFrequently: true })
         if (!context) throw new Error('This browser cannot read the selected image.')
         const image = context.getImageData(0, 0, candidate.width, candidate.height)
@@ -103,6 +134,12 @@ async function decodeQrImage(file) {
           inversionAttempts: 'attemptBoth',
         })
         if (result?.data) return result.data
+
+        try {
+          return qrReader.decodeFromCanvas(candidate).getText()
+        } catch {
+          continue
+        }
       }
     }
 
@@ -447,6 +484,7 @@ function App() {
           /back|rear|environment|world/i.test(camera.label)
         )
         const camera = rearCamera || cameras[0]
+        const nativeDetector = createQrDetector()
 
         setQrScanStatus('Starting camera and focusing on the QR code...')
         controls = await scanner.decodeFromConstraints(
@@ -475,7 +513,7 @@ function App() {
         }
 
         let fallbackBusy = false
-        qrFallbackTimerRef.current = window.setInterval(() => {
+        qrFallbackTimerRef.current = window.setInterval(async () => {
           const video = qrVideoRef.current
           if (cancelled || fallbackBusy || qrScanHandledRef.current ||
               !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
@@ -483,6 +521,18 @@ function App() {
 
           fallbackBusy = true
           try {
+            if (nativeDetector) {
+              try {
+                const results = await nativeDetector.detect(video)
+                if (results[0]?.rawValue) {
+                  handleDetectedQr(results[0].rawValue)
+                  return
+                }
+              } catch {
+                // Continue with the JavaScript decoders if native decoding fails.
+              }
+            }
+
             const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight))
             fallbackCanvas.width = Math.round(video.videoWidth * scale)
             fallbackCanvas.height = Math.round(video.videoHeight * scale)
@@ -495,9 +545,14 @@ function App() {
           } finally {
             fallbackBusy = false
           }
-        }, 300)
+        }, 500)
 
-        setQrScanStatus('Camera ready. ZXing and jsQR are scanning; hold the full code in view.')
+        const decoderNames = [
+          nativeDetector && 'native QR',
+          'ZXing',
+          'jsQR',
+        ].filter(Boolean).join(', ')
+        setQrScanStatus(`Camera ready. ${decoderNames} are scanning; hold the full code in view.`)
       } catch (err) {
         if (cancelled) return
         setQrScanStatus(getCameraStartupError(err))

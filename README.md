@@ -110,7 +110,7 @@ For Render, set `RESEND_API_KEY` and set `EMAIL_FROM` to a sender address on a d
 
 The admin portal refreshes shared records every 10 seconds while open. The customer app refreshes membership and visit history every 10 seconds and the active barber list every 30 seconds; both refresh sooner when brought back to the foreground.
 
-The admin visit scanner uses ZXing with jsQR as a second live-camera decoder, including inverted QR handling. Image scanning tries upscaled, cropped, and padded versions of an uploaded image to recover older QR tickets without a quiet zone. New customer visit QR codes include a four-module light quiet zone and medium error correction. The deployed admin page must use HTTPS for camera access.
+The admin visit scanner uses the browser's native `BarcodeDetector` when available, with ZXing and jsQR as decoder fallbacks. Image scanning tries upscaled, cropped, and light/dark padded versions of an uploaded image to recover older QR tickets without a quiet zone. New customer visit QR codes include a four-module light quiet zone and medium error correction. The deployed admin page must use HTTPS for camera access.
 
 ## Admin credentials
 
