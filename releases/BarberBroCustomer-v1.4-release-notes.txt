@@ -1,0 +1,5 @@
+BarberBro Customer Release v1.4
+- Generates standard black-on-white visit QR codes using the qrcode package
+- Adds a four-module quiet zone and medium error correction for scanner compatibility
+- Signed with the existing BarberBro Customer release certificate
+- App version 1.3 (version code 4); install over the existing app without uninstalling

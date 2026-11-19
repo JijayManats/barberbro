@@ -924,10 +924,15 @@ button:disabled {
   background: #fffaf4;
 }
 
-.visit-ticket-code-surface svg {
+.visit-ticket-code-canvas {
   display: block;
   width: 100%;
   height: auto;
+  image-rendering: pixelated;
+}
+
+.visit-ticket-qr-error {
+  color: #ff8e86 !important;
 }
 
 .visit-ticket-qr h2,

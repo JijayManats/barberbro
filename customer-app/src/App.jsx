@@ -1,6 +1,6 @@
 
-import { useCallback, useEffect, useState } from 'react'
-import QRCode from 'react-qr-code'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import QRCode from 'qrcode'
 import './App.css'
 
 const API_URL =
@@ -38,6 +38,42 @@ const formatDate = (value) => {
     day: '2-digit',
     year: 'numeric',
   })
+}
+
+function VisitQrCode({ value }) {
+  const canvasRef = useRef(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+
+    QRCode.toCanvas(canvasRef.current, value, {
+      errorCorrectionLevel: 'M',
+      margin: 4,
+      width: 280,
+      color: {
+        dark: '#000000',
+        light: '#ffffff',
+      },
+    })
+      .then(() => {
+        if (active) setError('')
+      })
+      .catch((qrError) => {
+        if (active) setError(`Unable to generate the visit QR: ${qrError.message}`)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [value])
+
+  return (
+    <>
+      <canvas ref={canvasRef} className="visit-ticket-code-canvas" aria-label="Customer visit QR code" />
+      {error && <p className="visit-ticket-qr-error" role="alert">{error}</p>}
+    </>
+  )
 }
 
 function App() {
@@ -879,7 +915,7 @@ function App() {
                   {generatedVisitQr ? (
                     <>
                       <div className="visit-ticket-code-surface">
-                        <QRCode value={generatedVisitQr} size={210} level="M" bgColor="#fffaf4" fgColor="#171a2c" />
+                        <VisitQrCode value={generatedVisitQr} />
                       </div>
                       <h2>Show this code to the admin</h2>
                       <p>{visitService} · {visitBarber} · {money(visitAmount)}</p>

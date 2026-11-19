@@ -288,6 +288,7 @@ function App() {
   const [qrScannerOpen, setQrScannerOpen] = useState(false)
   const [qrScanStatus, setQrScanStatus] = useState('')
   const [qrScanPaused, setQrScanPaused] = useState(false)
+  const [qrFacingMode, setQrFacingMode] = useState('environment')
   const qrScanHandledRef = useRef(false)
   const [qrScannerRestartKey, setQrScannerRestartKey] = useState(0)
   const qrVideoRef = useRef(null)
@@ -480,17 +481,13 @@ function App() {
           new Map([[DecodeHintType.TRY_HARDER, true]]),
           { delayBetweenScanAttempts: 250 }
         )
-        const rearCamera = cameras.find((camera) =>
-          /back|rear|environment|world/i.test(camera.label)
-        )
-        const camera = rearCamera || cameras[0]
         const nativeDetector = createQrDetector()
 
         setQrScanStatus('Starting camera and focusing on the QR code...')
         controls = await scanner.decodeFromConstraints(
           {
             video: {
-              deviceId: { exact: camera.deviceId },
+              facingMode: { ideal: qrFacingMode },
               width: { ideal: 1280 },
               height: { ideal: 720 },
             },
@@ -552,7 +549,8 @@ function App() {
           'ZXing',
           'jsQR',
         ].filter(Boolean).join(', ')
-        setQrScanStatus(`Camera ready. ${decoderNames} are scanning; hold the full code in view.`)
+        const facingLabel = qrFacingMode === 'environment' ? 'rear' : 'front'
+        setQrScanStatus(`Camera ready (${facingLabel}). ${decoderNames} are scanning; hold the full code in view.`)
       } catch (err) {
         if (cancelled) return
         setQrScanStatus(getCameraStartupError(err))
@@ -568,7 +566,12 @@ function App() {
       qrScannerControlsRef.current?.stop()
       qrScannerControlsRef.current = null
     }
-  }, [handleDetectedQr, qrScannerOpen, qrScannerRestartKey])
+  }, [handleDetectedQr, qrFacingMode, qrScannerOpen, qrScannerRestartKey])
+
+  function switchQrCamera() {
+    setQrFacingMode((current) => current === 'environment' ? 'user' : 'environment')
+    setQrScanStatus('Switching camera...')
+  }
 
   async function handleQrImageChange(event) {
     const file = event.target.files?.[0]
@@ -1218,6 +1221,9 @@ function App() {
               playsInline
             />
             <div className="admin-scan-actions">
+              <button type="button" className="admin-outline" onClick={switchQrCamera}>
+                Switch to {qrFacingMode === 'environment' ? 'front' : 'rear'} camera
+              </button>
               <button
                 type="button"
                 className="admin-outline"
