@@ -889,10 +889,15 @@ button:disabled {
 }
 
 .visit-ticket-layout {
+  min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.8fr);
   gap: 20px;
   align-items: stretch;
+}
+
+.visit-ticket-layout > * {
+  min-width: 0;
 }
 
 .visit-ticket-form {
@@ -905,6 +910,8 @@ button:disabled {
 }
 
 .visit-ticket-qr {
+  width: 100%;
+  min-width: 0;
   min-height: 320px;
   display: flex;
   flex-direction: column;
@@ -917,9 +924,9 @@ button:disabled {
 
 .visit-ticket-code-surface {
   box-sizing: border-box;
-  width: 282px;
+  width: min(282px, 100%);
   max-width: 100%;
-  padding: 36px;
+  padding: clamp(16px, 7vw, 36px);
   border-radius: 8px;
   background: #fffaf4;
 }
@@ -927,6 +934,7 @@ button:disabled {
 .visit-ticket-code-canvas {
   display: block;
   width: 100%;
+  max-width: 100%;
   height: auto;
   image-rendering: pixelated;
 }
@@ -998,7 +1006,7 @@ button:disabled {
 
 @media (max-width: 720px) {
   .visit-ticket-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .reward-card {

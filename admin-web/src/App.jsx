@@ -281,6 +281,7 @@ function App() {
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [activationEmailRetryCustomer, setActivationEmailRetryCustomer] = useState(null)
+  const [activationCodeCustomerId, setActivationCodeCustomerId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [lastRefreshedAt, setLastRefreshedAt] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -681,6 +682,7 @@ function App() {
     if (!customer || saving) return
 
     setSaving(true)
+    setActivationCodeCustomerId(String(customer.id))
     setError('')
     setNotice('')
     setActivationEmailRetryCustomer(null)
@@ -703,12 +705,13 @@ function App() {
         setError(
           `The activation code was generated, but the email was NOT sent${result.email ? ` to ${result.email}` : ''}. ` +
           `${result.email_error || 'No email delivery details were returned.'} ` +
-          'For Render, configure RESEND_API_KEY and an EMAIL_FROM address verified by Resend. The existing code remains active for 24 hours.'
+          'Check Render EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, and EMAIL_FROM. For HTTPS delivery, configure RESEND_API_KEY and a verified EMAIL_FROM. The existing code remains active for 24 hours.'
         )
       }
     } catch (err) {
       setError(err.message || 'Failed to create activation code.')
     } finally {
+      setActivationCodeCustomerId(null)
       setSaving(false)
     }
   }
@@ -725,7 +728,7 @@ function App() {
         setError(
           `The email was not accepted for ${activationEmailRetryCustomer.email}. ` +
           `${result.email_error || 'Check the email provider configuration.'} ` +
-          'For Render, configure RESEND_API_KEY and an EMAIL_FROM address verified by Resend.'
+          'Check Render EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, and EMAIL_FROM, or configure RESEND_API_KEY with a verified sender.'
         )
         return
       }
@@ -735,7 +738,7 @@ function App() {
     } catch (err) {
       setError(
         `${err.message || 'Failed to resend activation email.'} ` +
-        'For Render, configure RESEND_API_KEY and an EMAIL_FROM address verified by Resend.'
+        'Check Render EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, and EMAIL_FROM, or configure RESEND_API_KEY with a verified sender.'
       )
     } finally {
       setSaving(false)
@@ -1027,6 +1030,15 @@ function App() {
           </div>
         )}
 
+        {activationCodeCustomerId && (
+          <div className="admin-notice admin-progress-notice" role="status">
+            <span className="admin-progress-spinner" aria-hidden="true" />
+            <span>
+              Generating the activation code and trying to send the email. This may take up to 30 seconds.
+            </span>
+          </div>
+        )}
+
         {error && (
           <div className="admin-notice" role="alert">
             <span>{error}</span>
@@ -1103,6 +1115,7 @@ function App() {
               </div>
               <CustomerTable
                 customers={filteredCustomers.slice(0, 5)}
+                activationCodeCustomerId={activationCodeCustomerId}
                 onCreateCode={createActivationCode}
                 onDelete={deleteCustomer}
               />
@@ -1169,6 +1182,7 @@ function App() {
             <CustomerTable
               customers={filteredCustomers}
               rewardTarget={rewardTarget}
+              activationCodeCustomerId={activationCodeCustomerId}
               onCreateCode={createActivationCode}
               onDelete={deleteCustomer}
             />
@@ -1369,7 +1383,7 @@ function SearchBox({ search, setSearch }) {
   )
 }
 
-function CustomerTable({ customers, rewardTarget, onCreateCode, onDelete }) {
+function CustomerTable({ customers, rewardTarget, activationCodeCustomerId, onCreateCode, onDelete }) {
   if (!customers.length) return <p className="admin-empty">No customers found.</p>
 
   return (
@@ -1396,7 +1410,13 @@ function CustomerTable({ customers, rewardTarget, onCreateCode, onDelete }) {
               <td className="admin-actions">
                 <div className="admin-action-stack">
                 {!c.isActivated ? (
-                  <button disabled={!onCreateCode} className="admin-action-button" onClick={() => onCreateCode(c)}>Generate code</button>
+                  <button
+                    disabled={!onCreateCode || Boolean(activationCodeCustomerId)}
+                    className="admin-action-button"
+                    onClick={() => onCreateCode(c)}
+                  >
+                    {activationCodeCustomerId === String(c.id) ? 'Sending email...' : 'Generate code'}
+                  </button>
                 ) : c.stamps >= (rewardTarget || 10) ? (
                   <span className="admin-cell-sub">Redeem in customer app</span>
                 ) : (

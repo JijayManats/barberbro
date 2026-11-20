@@ -1,0 +1,5 @@
+BarberBro Customer Release v1.6
+- Keeps generated visit QR codes within narrow mobile layouts
+- Includes customer-app reward redemption
+- Signed with the existing BarberBro Customer release certificate
+- App version 1.6 (version code 6); install over the existing app without uninstalling

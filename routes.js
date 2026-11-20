@@ -249,6 +249,9 @@ QR payload: ${qrPayload}`;
     port,
     secure: port === 465,
     auth: { user, pass },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
   });
 
   const delivery = await transporter.sendMail({
