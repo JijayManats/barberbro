@@ -1,0 +1,6 @@
+BarberBro Customer Release v1.5
+- Customers can redeem eligible active rewards directly in the customer app
+- Redeeming a reward deducts its stamp requirement and carries over remaining stamps
+- Includes the current mobile customer app and loyalty updates
+- Signed with the existing BarberBro Customer release certificate
+- App version 1.5 (version code 5); install over the existing app without uninstalling
