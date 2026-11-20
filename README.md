@@ -104,7 +104,7 @@ The repository also includes a `render.yaml` file that can be used with Render B
 
 ### Fixing activation-code email delivery on Render
 
-The customer activation code is sent by the backend. A log such as `SMTP verification failed: Connection timeout` means the backend could not connect to the SMTP server; it is not evidence that the activation code itself is invalid. Resend is recommended on Render because it sends over HTTPS and avoids SMTP connection timeouts.
+The customer activation code is sent by the backend. An SMTP connection timeout means the backend could not reach the SMTP server; it is not evidence that the activation code itself is invalid. Resend is also supported on Render because it sends over HTTPS.
 
 1. Create a Resend account and verify a sending domain.
 2. Create a Resend API key.
