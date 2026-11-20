@@ -742,30 +742,6 @@ function App() {
     }
   }
 
-  async function redeemReward(customer) {
-    if (customer.stamps < target || saving) return
-
-    const confirmed = window.confirm(
-      `Redeem the loyalty reward for ${customer.name}? This will reset their ${target} stamps.`
-    )
-
-    if (!confirmed) return
-
-    setSaving(true)
-    setError('')
-    setNotice('')
-
-    try {
-      await api.redeemReward(customer.id)
-      setNotice(`Reward redeemed for ${customer.name}.`)
-      await loadData()
-    } catch (err) {
-      setError(err.message || 'Failed to redeem reward.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function deleteCustomer(customer) {
     if (!customer || saving) return
 
@@ -994,26 +970,29 @@ function App() {
 
         <p className="admin-nav-label">WORKSPACE</p>
 
-        {[
-          ['Dashboard', '▦'],
-          ['Customers', '♙'],
-          ['Barbers', '✂'],
-          ['Visit History', '◷'],
-          ['Rewards', '✦'],
-        ].map(([page, icon]) => (
-          <button
-            key={page}
-            className={`admin-nav-item ${activePage === page ? 'selected' : ''}`}
-            onClick={() => {
-              setActivePage(page)
-              setNotice('')
-              setError('')
-              setActivationEmailRetryCustomer(null)
-            }}
-          >
-            <span>{icon}</span>{page}
-          </button>
-        ))}
+        <nav className="admin-nav-items" aria-label="Workspace">
+          {[
+            ['Dashboard', '▦'],
+            ['Customers', '♙'],
+            ['Barbers', '✂'],
+            ['Visit History', '◷'],
+            ['Rewards', '✦'],
+          ].map(([page, icon]) => (
+            <button
+              key={page}
+              className={`admin-nav-item ${activePage === page ? 'selected' : ''}`}
+              aria-current={activePage === page ? 'page' : undefined}
+              onClick={() => {
+                setActivePage(page)
+                setNotice('')
+                setError('')
+                setActivationEmailRetryCustomer(null)
+              }}
+            >
+              <span>{icon}</span>{page}
+            </button>
+          ))}
+        </nav>
 
         <div className="admin-sidebar-footer">
           <div className="admin-avatar">MM</div>
@@ -1124,7 +1103,6 @@ function App() {
               </div>
               <CustomerTable
                 customers={filteredCustomers.slice(0, 5)}
-                onRedeem={redeemReward}
                 onCreateCode={createActivationCode}
                 onDelete={deleteCustomer}
               />
@@ -1191,7 +1169,6 @@ function App() {
             <CustomerTable
               customers={filteredCustomers}
               rewardTarget={rewardTarget}
-              onRedeem={redeemReward}
               onCreateCode={createActivationCode}
               onDelete={deleteCustomer}
             />
@@ -1240,16 +1217,13 @@ function App() {
 
             <div className="admin-panel" style={{ marginTop: 24 }}>
               <div className="admin-panel-heading">
-                <div><h2>Eligible members</h2><p>Members that already meet the current reward threshold.</p></div>
+                <div><h2>Reward eligibility</h2><p>Members redeem eligible rewards directly from the customer app.</p></div>
               </div>
-              <CustomerTable
-                customers={customers.filter(c => c.stamps >= rewardTarget)}
-                rewardTarget={rewardTarget}
-                onRedeem={redeemReward}
-                onCreateCode={createActivationCode}
-                onDelete={deleteCustomer}
-              />
-              {eligible === 0 && <p className="admin-empty">No rewards are ready to redeem right now.</p>}
+              <p className="admin-empty">
+                {eligible === 0
+                  ? 'No members currently meet the reward threshold.'
+                  : `${eligible} ${eligible === 1 ? 'member' : 'members'} currently meet the reward threshold. They can redeem in the customer app.`}
+              </p>
             </div>
           </section>
         )}
@@ -1395,7 +1369,7 @@ function SearchBox({ search, setSearch }) {
   )
 }
 
-function CustomerTable({ customers, rewardTarget, onRedeem, onCreateCode, onDelete }) {
+function CustomerTable({ customers, rewardTarget, onCreateCode, onDelete }) {
   if (!customers.length) return <p className="admin-empty">No customers found.</p>
 
   return (
@@ -1424,7 +1398,7 @@ function CustomerTable({ customers, rewardTarget, onRedeem, onCreateCode, onDele
                 {!c.isActivated ? (
                   <button disabled={!onCreateCode} className="admin-action-button" onClick={() => onCreateCode(c)}>Generate code</button>
                 ) : c.stamps >= (rewardTarget || 10) ? (
-                  <button disabled={!onRedeem} className="admin-action-button reward-button" onClick={() => onRedeem(c)}>Redeem</button>
+                  <span className="admin-cell-sub">Redeem in customer app</span>
                 ) : (
                   <span className="admin-cell-sub">Visit from customer app</span>
                 )}

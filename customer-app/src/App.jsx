@@ -96,9 +96,13 @@ function App() {
 
   const [customer, setCustomer] = useState(null)
   const [visits, setVisits] = useState([])
+  const [rewardTemplates, setRewardTemplates] = useState([])
   const [barbers, setBarbers] = useState([])
   const [dataLoading, setDataLoading] = useState(false)
   const [dataError, setDataError] = useState('')
+  const [rewardNotice, setRewardNotice] = useState('')
+  const [rewardError, setRewardError] = useState('')
+  const [redeemingRewardId, setRedeemingRewardId] = useState(null)
   const [barberError, setBarberError] = useState('')
   const [visitService, setVisitService] = useState('Classic Haircut')
   const [visitBarber, setVisitBarber] = useState('Michael')
@@ -110,31 +114,38 @@ function App() {
     setToken('')
     setCustomer(null)
     setVisits([])
+    setRewardTemplates([])
     setPassword('')
     setLoginError('')
     setDataError('')
+    setRewardNotice('')
+    setRewardError('')
+    setRedeemingRewardId(null)
     setActivePage('dashboard')
     setGeneratedVisitQr('')
   }, [])
 
-  const apiRequest = useCallback(async (path, accessToken) => {
+  const apiRequest = useCallback(async (path, accessToken, options = {}) => {
     const response = await fetch(`${API_URL}${path}`, {
       cache: 'no-store',
+      method: options.method || 'GET',
       headers: {
                                 ...( accessToken ? { Authorization: "Bearer " + accessToken } : {}),
         'Content-Type': 'application/json',
       },
+      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
     })
 
     if (response.status === 401) {
       throw new Error('SESSION_EXPIRED')
     }
 
+    const data = await response.json().catch(() => ({}))
     if (!response.ok) {
-      throw new Error(`Unable to load data (${response.status})`)
+      throw new Error(data.error || `Unable to load data (${response.status})`)
     }
 
-    return response.json()
+    return data
   }, [])
   useEffect(() => {
     let active = true
@@ -205,6 +216,7 @@ function App() {
     if (!token) {
       setCustomer(null)
       setVisits([])
+      setRewardTemplates([])
       setDataLoading(false)
       return
     }
@@ -218,15 +230,17 @@ function App() {
       requestInFlight = true
       if (showLoading) setDataLoading(true)
       try {
-        const [profile, visitHistory] = await Promise.all([
+        const [profile, visitHistory, activeRewards] = await Promise.all([
           apiRequest('/auth/me', token),
           apiRequest('/auth/visits', token),
+          apiRequest('/reward-templates', token),
         ])
 
         if (!active) return
 
         setCustomer(profile)
         setVisits(Array.isArray(visitHistory) ? visitHistory : [])
+        setRewardTemplates(Array.isArray(activeRewards) ? activeRewards : [])
         setDataError('')
       } catch (error) {
         if (!active) return
@@ -380,7 +394,7 @@ function App() {
   const totalVisits = Number(customer?.total_visits) || 0
   const stamps = Number(customer?.loyalty_stamps) || 0
   const totalSpent = Number(customer?.total_spent) || 0
-  const stampsRequired = 10
+  const stampsRequired = Number(rewardTemplates[0]?.required_stamps) || 10
   const stampsRemaining = Math.max(0, stampsRequired - stamps)
   const displayName =
     customer?.full_name ||
@@ -388,6 +402,9 @@ function App() {
     customer?.member_code ||
     'BarberBro Member'
 
+  const nextReward = rewardTemplates.find(
+    (reward) => stamps < Number(reward.required_stamps)
+  ) || rewardTemplates[0]
   const selectedVisitBarber = barbers.find((item) => item.name === visitBarber)
   const visitQrValue = customer && selectedVisitBarber
     ? [
@@ -407,6 +424,41 @@ function App() {
     }
 
     setGeneratedVisitQr(visitQrValue)
+  }
+
+  async function redeemCustomerReward(reward) {
+    if (!customer || redeemingRewardId !== null) return
+
+    const requiredStamps = Number(reward.required_stamps)
+    if (stamps < requiredStamps) return
+
+    if (!window.confirm(`Redeem ${reward.name} for ${requiredStamps} stamps?`)) return
+
+    setRedeemingRewardId(reward.id)
+    setRewardNotice('')
+    setRewardError('')
+
+    try {
+      const result = await apiRequest('/auth/rewards/redeem', token, {
+        method: 'POST',
+        body: { reward_id: reward.id },
+      })
+      setCustomer((current) => current
+        ? { ...current, loyalty_stamps: result.reward.remaining_stamps }
+        : current)
+      setRewardNotice(
+        `${result.reward.name} redeemed. ${result.reward.remaining_stamps} stamps remain.`
+      )
+    } catch (error) {
+      if (error.message === 'SESSION_EXPIRED') {
+        logout()
+        setLoginError('Your session expired. Please sign in again.')
+      } else {
+        setRewardError(error.message || 'Unable to redeem this reward right now.')
+      }
+    } finally {
+      setRedeemingRewardId(null)
+    }
   }
 
   const initials = displayName
@@ -944,16 +996,63 @@ function App() {
                 <div className="reward-feature-icon">✂</div>
                 <div className="reward-feature-copy">
                   <div className="membership-kicker"><span /> YOUR NEXT REWARD</div>
-                  <h2>One free haircut</h2>
-                  <p>Collect {stampsRequired} loyalty stamps to unlock your reward.</p>
+                  <h2>{nextReward?.name || 'Rewards coming soon'}</h2>
+                  <p>
+                    {nextReward
+                      ? nextReward.description || `Collect ${nextReward.required_stamps} stamps to unlock this reward.`
+                      : 'The shop has not added any rewards yet.'}
+                  </p>
                   <div className="mini-progress large-progress">
-                    <span style={{ width: `${Math.min(100, stamps / stampsRequired * 100)}%` }} />
+                    <span style={{ width: `${Math.min(100, stamps / (Number(nextReward?.required_stamps) || stampsRequired) * 100)}%` }} />
                   </div>
                   <div className="stamp-legend">
-                    <b>{stamps} of {stampsRequired} stamps</b>
-                    <span>{stampsRemaining} remaining</span>
+                    <b>{stamps} of {nextReward?.required_stamps || stampsRequired} stamps</b>
+                    <span>
+                      {Math.max(0, Number(nextReward?.required_stamps || stampsRequired) - stamps)} remaining
+                    </span>
                   </div>
                 </div>
+              </div>
+              <div className="panel">
+                <div className="panel-heading">
+                  <div><h2>Available rewards</h2><p>Redeem an eligible reward right here in the app.</p></div>
+                </div>
+                {rewardNotice && <p className="reward-feedback reward-feedback-success" role="status">{rewardNotice}</p>}
+                {rewardError && <p className="reward-feedback reward-feedback-error" role="alert">{rewardError}</p>}
+                {rewardTemplates.length > 0 ? (
+                  <div className="reward-catalog">
+                    {rewardTemplates.map((reward) => {
+                      const requiredStamps = Number(reward.required_stamps)
+                      const eligible = stamps >= requiredStamps
+                      const remaining = Math.max(0, requiredStamps - stamps)
+
+                      return (
+                        <article className="reward-card" key={reward.id}>
+                          <div className="reward-card-icon">✦</div>
+                          <div className="reward-card-copy">
+                            <h3>{reward.name}</h3>
+                            <p>{reward.description || 'A reward from your barbershop.'}</p>
+                            <span>{requiredStamps} stamps</span>
+                          </div>
+                          <button
+                            className="gold-button reward-claim-button"
+                            type="button"
+                            disabled={!eligible || redeemingRewardId !== null}
+                            onClick={() => redeemCustomerReward(reward)}
+                          >
+                            {redeemingRewardId === reward.id
+                              ? 'Redeeming...'
+                              : eligible
+                                ? 'Redeem reward'
+                                : `${remaining} more ${remaining === 1 ? 'stamp' : 'stamps'}`}
+                          </button>
+                        </article>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="reward-empty">No active rewards are available right now.</p>
+                )}
               </div>
               <div className="panel">
                 <div className="panel-heading">
@@ -962,7 +1061,7 @@ function App() {
                 <div className="steps-grid">
                   <div className="step-card"><span>01</span><h3>Visit the shop</h3><p>Enjoy your regular haircut or barber service.</p></div>
                   <div className="step-card"><span>02</span><h3>Earn a stamp</h3><p>Your visit earns a loyalty stamp according to shop policy.</p></div>
-                  <div className="step-card"><span>03</span><h3>Claim your reward</h3><p>Once eligible, ask the shop to confirm and redeem your reward.</p></div>
+                  <div className="step-card"><span>03</span><h3>Claim your reward</h3><p>When you have enough stamps, confirm your choice in the app.</p></div>
                 </div>
               </div>
             </section>

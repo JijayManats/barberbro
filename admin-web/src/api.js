@@ -121,11 +121,6 @@ export const api = {
       body: JSON.stringify(visit),
     }),
 
-  redeemReward: (customerId) =>
-    request(`/customers/${customerId}/redeem`, {
-      method: "POST",
-    }),
-
   createActivationCode: (customerId) =>
     request(`/customers/${customerId}/activation-code`, {
       method: "POST",

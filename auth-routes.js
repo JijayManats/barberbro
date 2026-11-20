@@ -600,4 +600,101 @@ router.get("/visits", authenticateToken, async (req, res) => {
   }
 });
 
+router.post("/rewards/redeem", authenticateToken, async (req, res) => {
+  if (req.auth.role !== "customer") {
+    return res.status(403).json({ error: "Customer access only" });
+  }
+
+  const rewardId = Number(req.body?.reward_id);
+  if (!Number.isInteger(rewardId) || rewardId <= 0) {
+    return res.status(400).json({ error: "Invalid reward" });
+  }
+
+  let client;
+  let transactionStarted = false;
+
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN");
+    transactionStarted = true;
+
+    const customerResult = await client.query(
+      `SELECT id, loyalty_stamps
+       FROM customers
+       WHERE id = $1
+       FOR UPDATE`,
+      [req.auth.customerId]
+    );
+
+    if (customerResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    const rewardResult = await client.query(
+      `SELECT id, name, required_stamps
+       FROM reward_templates
+       WHERE id = $1 AND is_active = TRUE
+       FOR SHARE`,
+      [rewardId]
+    );
+
+    if (rewardResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      return res.status(404).json({ error: "This reward is no longer available" });
+    }
+
+    const customer = customerResult.rows[0];
+    const reward = rewardResult.rows[0];
+    if (customer.loyalty_stamps < reward.required_stamps) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      return res.status(400).json({
+        error: `You need ${reward.required_stamps} stamps to redeem this reward`,
+      });
+    }
+
+    const remainingStamps = customer.loyalty_stamps - reward.required_stamps;
+    await client.query(
+      `INSERT INTO rewards (customer_id, reward_name, stamps_required, status, redeemed_at)
+       VALUES ($1, $2, $3, 'redeemed', NOW())`,
+      [customer.id, reward.name, reward.required_stamps]
+    );
+
+    await client.query(
+      `UPDATE customers
+       SET loyalty_stamps = $2
+       WHERE id = $1`,
+      [customer.id, remainingStamps]
+    );
+
+    await client.query("COMMIT");
+    transactionStarted = false;
+
+    return res.json({
+      message: "Reward redeemed successfully",
+      reward: {
+        id: reward.id,
+        name: reward.name,
+        stamps_required: reward.required_stamps,
+        remaining_stamps: remainingStamps,
+      },
+    });
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error("Customer reward rollback failed:", rollbackError.message);
+      }
+    }
+    console.error("Customer reward redemption failed:", error.message);
+    return res.status(500).json({ error: "Unable to redeem this reward right now" });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 module.exports = router;
