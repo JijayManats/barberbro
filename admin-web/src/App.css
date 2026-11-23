@@ -267,6 +267,7 @@ a { color: inherit; text-decoration: none; }
 .admin-footer { color: #a09d94; font-size: 9px; text-align: center; padding: 10px; }
 
 .admin-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #edf5e9; color: #416b3e; border: 1px solid #d9e8d1; border-radius: 8px; padding: 12px 14px; font-size: 11px; margin-top: 16px; }
+.admin-notice-error { background: #fff1f0; border-color: #f6c2be; color: #ae433d; }
 .admin-notice > span { min-width: 0; overflow-wrap: anywhere; }
 .admin-notice button { background: transparent; border: 0; color: inherit; font-size: 18px; }
 .admin-progress-notice { justify-content: flex-start; background: #f7f1e4; border-color: #e8d7b4; color: #755c31; }

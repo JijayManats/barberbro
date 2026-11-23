@@ -124,7 +124,11 @@ function parseVisitQrPayload(rawPayload) {
 
 async function sendMemberCardEmail(customer, activationCode) {
   if (!customer?.email) {
-    return { sent: false, reason: "missing-email" };
+    return {
+      sent: false,
+      reason: "missing-email",
+      error: "No email address is saved for this customer.",
+    };
   }
 
   const resendApiKey = process.env.RESEND_API_KEY;
@@ -658,12 +662,10 @@ router.post("/customers/:id/activation-code", async (req, res) => {
     );
 
     const createdActivationCode = result.rows[0].code;
-    let emailResult = { sent: false, reason: "not-attempted" };
+    let emailResult;
 
     try {
-      if (customer.email) {
-        emailResult = await sendMemberCardEmail(customer, createdActivationCode);
-      }
+      emailResult = await sendMemberCardEmail(customer, createdActivationCode);
     } catch (emailError) {
       emailResult = {
         sent: false,

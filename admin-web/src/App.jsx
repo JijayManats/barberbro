@@ -26,6 +26,7 @@ function normalizeCustomer(c) {
     id: c.id,
     memberCode: c.member_code,
     name: c.full_name,
+    email: c.email || '',
     phone: c.phone || '',
     visits: Number(c.total_visits || 0),
     stamps: Number(c.loyalty_stamps || 0),
@@ -391,7 +392,7 @@ function App() {
     }
 
     if (!background) setLoading(true)
-    setError('')
+    if (!background) setError('')
 
     const refresh = (async () => {
       try {
@@ -746,7 +747,7 @@ function App() {
       if (result.email_sent) {
         setNotice(`${activationDetails} Email accepted by the mail server for ${result.email}.`)
       } else {
-        setNotice(activationDetails)
+        setNotice(`${activationDetails} Email was not sent.`)
         if (result.email) {
           setActivationEmailRetryCustomer({
             id: customer.id,
@@ -1091,7 +1092,7 @@ function App() {
         )}
 
         {error && (
-          <div className="admin-notice" role="alert">
+          <div className="admin-notice admin-notice-error" role="alert">
             <span>{error}</span>
             {activationEmailRetryCustomer && (
               <button
@@ -1454,7 +1455,12 @@ function CustomerTable({ customers, rewardTarget, activationCodeCustomerId, onCr
         <tbody>
           {customers.map(c => (
             <tr key={c.id}>
-              <td><strong>{c.name}</strong><span className="admin-cell-sub">{c.phone || 'No phone provided'}</span></td>
+              <td>
+                <strong>{c.name}</strong>
+                <span className="admin-cell-sub">
+                  {c.email || 'No email address'}{c.phone ? ` · ${c.phone}` : ''}
+                </span>
+              </td>
               <td>{c.memberCode}</td>
               <td>{c.visits}</td>
               <td>
