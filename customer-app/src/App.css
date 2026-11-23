@@ -868,6 +868,107 @@ button:disabled {
   margin-top: 18px;
 }
 
+.haircut-picker {
+  min-width: 0;
+  margin: 18px 0 0;
+}
+
+.haircut-picker-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.haircut-picker-heading h3 {
+  margin: 0;
+  color: #eee8dc;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.haircut-picker-heading span {
+  color: #9c978b;
+  font-size: 9px;
+}
+
+.haircut-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 9px;
+}
+
+.haircut-option {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #413b33;
+  border-radius: 9px;
+  background: #171613;
+}
+
+.haircut-option.is-selected {
+  border-color: #dfc17d;
+  box-shadow: 0 0 0 1px #dfc17d;
+}
+
+.haircut-option-select {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  color: #f4efe6;
+  background: transparent;
+  text-align: left;
+}
+
+.haircut-option-select img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.65;
+  object-fit: cover;
+}
+
+.haircut-option-select span {
+  overflow: hidden;
+  padding: 9px 28px 9px 9px;
+  color: #e7e0d4;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.haircut-favorite {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #574c39;
+  border-radius: 50%;
+  color: #f4efe6;
+  background: #171613d9;
+  font-size: 16px;
+}
+
+.haircut-favorite.is-favorite {
+  border-color: #dfc17d;
+  color: #f1d58f;
+}
+
+.haircut-favorite-error {
+  margin: 8px 0 0;
+  color: #ff8e86;
+  font-size: 10px;
+}
+
 .visit-qr-form label {
   display: grid;
   gap: 6px;
@@ -1209,6 +1310,28 @@ button:disabled {
 
 .history-row {
   padding: 18px 0;
+}
+
+.reward-history-panel {
+  margin-top: 16px;
+}
+
+.reward-history-panel .panel-heading {
+  margin-bottom: 8px;
+}
+
+.reward-history-icon {
+  color: #e0c17e;
+}
+
+.reward-history-status {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid #3c5839;
+  border-radius: 20px;
+  color: #b7d3a9;
+  background: #202b1f;
+  font-size: 9px;
 }
 
 .profile-panel {

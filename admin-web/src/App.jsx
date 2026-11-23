@@ -45,6 +45,17 @@ function normalizeVisit(v) {
   }
 }
 
+function normalizeRewardRedemption(redemption) {
+  return {
+    id: redemption.id,
+    customer: redemption.full_name,
+    memberCode: redemption.member_code,
+    reward: redemption.reward_name,
+    stamps: Number(redemption.stamps_required || 0),
+    date: formatDate(redemption.redeemed_at),
+  }
+}
+
 function createQrDetector() {
   if (typeof window.BarcodeDetector !== 'function') return null
 
@@ -157,6 +168,42 @@ function parseVisitQrPayload(rawPayload, barberRows = []) {
   }
 
   const compactFields = trimmedPayload.split('|')
+  if (compactFields.length === 5 && compactFields[0] === 'BBV3') {
+    const customerId = Number(compactFields[1])
+    const serviceByCode = {
+      1: 'Buzz Cut',
+      2: 'Crew Cut',
+      3: 'Low Fade',
+      4: 'High Fade',
+      5: 'Taper Cut',
+      6: 'Undercut',
+      7: 'Pompadour',
+      8: 'Side Part',
+      9: 'Textured Crop',
+      10: 'Slick Back',
+      11: 'Spiky Top',
+      12: 'Curly Top',
+      13: 'Medium Flow',
+    }
+    const service = serviceByCode[compactFields[2]]
+    const barberId = compactFields[3]
+    const selectedBarber = barberRows.find((barber) => String(barber.id) === barberId)
+    const amount = Number(compactFields[4])
+
+    if (!Number.isInteger(customerId) || customerId <= 0 ||
+        !service || !selectedBarber?.name ||
+        compactFields[4].trim() === '' || !Number.isFinite(amount) || amount < 0) {
+      return null
+    }
+
+    return {
+      customer_id: customerId,
+      service,
+      barber_name: selectedBarber.name,
+      amount,
+    }
+  }
+
   if (compactFields.length === 5 && compactFields[0] === 'BBV2') {
     const customerId = Number(compactFields[1])
     const serviceByCode = {
@@ -286,6 +333,7 @@ function App() {
   const [lastRefreshedAt, setLastRefreshedAt] = useState(null)
   const [saving, setSaving] = useState(false)
   const [barbers, setBarbers] = useState([])
+  const [rewardRedemptions, setRewardRedemptions] = useState([])
   const [showAddCustomer, setShowAddCustomer] = useState(false)
   const [qrScannerOpen, setQrScannerOpen] = useState(false)
   const [qrScanStatus, setQrScanStatus] = useState('')
@@ -347,12 +395,13 @@ function App() {
 
     const refresh = (async () => {
       try {
-        const [dashboard, customerRows, visitRows, barberRows, rewardRows] = await Promise.all([
+        const [dashboard, customerRows, visitRows, barberRows, rewardRows, redemptionRows] = await Promise.all([
           api.getDashboard(),
           api.getCustomers(),
           api.getVisits(),
           api.getBarbers(),
           api.getRewardTemplates(),
+          api.getRewardRedemptions(),
         ])
 
         setStats(dashboard)
@@ -360,6 +409,7 @@ function App() {
         setVisits(visitRows.map(normalizeVisit))
         setBarbers(Array.isArray(barberRows) ? barberRows : [])
         setRewardTemplates(Array.isArray(rewardRows) ? rewardRows : [])
+        setRewardRedemptions(redemptionRows.map(normalizeRewardRedemption))
         setLastRefreshedAt(new Date())
       } catch (err) {
         setError(err.message || 'Unable to load BarberBro data.')
@@ -380,6 +430,7 @@ function App() {
     if (!token) {
       setCustomers([])
       setVisits([])
+      setRewardRedemptions([])
       setStats({ total_customers: 0, visits_today: 0, total_revenue: 0 })
       setLoading(false)
       return
@@ -1239,6 +1290,14 @@ function App() {
                   : `${eligible} ${eligible === 1 ? 'member' : 'members'} currently meet the reward threshold. They can redeem in the customer app.`}
               </p>
             </div>
+
+            <div className="admin-panel" style={{ marginTop: 24 }}>
+              <div className="admin-panel-heading">
+                <div><h2>Redemption History</h2><p>Rewards claimed by customers, newest first.</p></div>
+                <span className="admin-tag active-tag">{rewardRedemptions.length} shown</span>
+              </div>
+              <RewardRedemptionTable redemptions={rewardRedemptions} />
+            </div>
           </section>
         )}
 
@@ -1450,6 +1509,33 @@ function VisitTable({ visits }) {
               <td>{v.barber}</td>
               <td>{v.date}</td>
               <td>₱{formatMoney(v.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function RewardRedemptionTable({ redemptions }) {
+  if (!redemptions.length) {
+    return <p className="admin-empty">No rewards have been redeemed yet.</p>
+  }
+
+  return (
+    <div className="admin-table-wrap">
+      <table className="admin-table">
+        <thead><tr><th>CUSTOMER</th><th>REWARD</th><th>STAMPS</th><th>REDEEMED</th></tr></thead>
+        <tbody>
+          {redemptions.map((redemption) => (
+            <tr key={redemption.id}>
+              <td>
+                <strong>{redemption.customer || 'Member'}</strong>
+                <span className="admin-cell-sub">{redemption.memberCode}</span>
+              </td>
+              <td>{redemption.reward}</td>
+              <td>{redemption.stamps} stamps</td>
+              <td>{redemption.date}</td>
             </tr>
           ))}
         </tbody>

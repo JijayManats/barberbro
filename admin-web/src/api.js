@@ -98,6 +98,8 @@ export const api = {
 
   getRewardTemplates: () => request("/reward-templates/admin"),
 
+  getRewardRedemptions: () => request("/reward-redemptions"),
+
   addRewardTemplate: (reward) =>
     request("/reward-templates", {
       method: "POST",

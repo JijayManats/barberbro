@@ -3,7 +3,6 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const QRCode = require("qrcode");
 const nodemailer = require("nodemailer");
 const pool = require("./db");
 
@@ -95,6 +94,16 @@ function getCustomerDisplayName(customer) {
   return "Member";
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
+}
+
 async function sendMemberCardEmail(customer, activationCode) {
   if (!customer?.email) {
     return { sent: false, reason: "missing-email" };
@@ -108,65 +117,59 @@ async function sendMemberCardEmail(customer, activationCode) {
   const from = process.env.EMAIL_FROM || user || "BarberBro <noreply@barberbro.local>";
 
   const displayName = getCustomerDisplayName(customer);
-  const qrPayload = buildCustomerQrPayload(customer);
   const memberId = String(customer?.member_code || "").toUpperCase();
 
   if (!resendApiKey && (!host || !user || !pass)) {
     const preview = `Customer: ${displayName}
 Member ID: ${memberId}
-Activation code: ${activationCode}
-QR payload: ${qrPayload}`;
+Activation code: ${activationCode}`;
     console.log("[member-card-demo]", preview);
     return { sent: false, reason: "smtp-missing", preview };
   }
 
-  const nodemailer = require("nodemailer");
-  const QRCode = require("qrcode");
-  const qrImage = qrPayload
-    ? await QRCode.toDataURL(qrPayload, {
-        width: 220,
-        margin: 1,
-        color: {
-          dark: "#171a2c",
-          light: "#fffaf4",
-        },
-      })
-    : "";
+  const safeDisplayName = escapeHtml(displayName);
+  const safeMemberId = escapeHtml(memberId);
+  const safeActivationCode = escapeHtml(activationCode);
 
   const html = `
-    <div style="font-family: Arial, sans-serif; background: #f5efe7; padding: 24px; color: #171a2c;">
-      <div style="max-width: 620px; margin: 0 auto; background: linear-gradient(135deg, #171a2c 0%, #241d38 100%); border-radius: 24px; overflow: hidden; box-shadow: 0 20px 40px rgba(23,26,44,0.18);">
-        <div style="padding: 32px 28px 18px; color: #f3ebdf;">
-          <div style="font-size: 12px; letter-spacing: 3px; text-transform: uppercase; opacity: 0.7;">BarberBro Loyalty</div>
-          <h1 style="margin: 10px 0 0; font-size: 32px;">Welcome, ${displayName}</h1>
-        </div>
-        <div style="padding: 0 28px 28px; background: #fffaf4; color: #171a2c;">
-          <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding-top: 28px;">
-            <div style="background: linear-gradient(135deg, #f3cf6b 0%, #dba95a 100%); border-radius: 18px; padding: 18px; text-align: center; min-width: 220px; min-height: 220px; display: flex; align-items: center; justify-content: center;">
-              ${qrImage ? `<img src="${qrImage}" alt="BarberBro member QR code" style="display: block; width: 180px; height: 180px; margin: 0 auto; background: white; border-radius: 16px; padding: 8px;" />` : `<div style="display:block;width:180px;height:180px;border-radius:16px;background:#f3efe9;display:flex;align-items:center;justify-content:center;color:#171a2c;font-weight:700;">QR</div>`}
-            </div>
-            <div>
-              <div style="font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #5a5447;">Member ID</div>
-              <div style="font-size: 30px; font-weight: 800; margin-top: 8px; letter-spacing: 1px;">${memberId}</div>
-              <div style="margin-top: 16px; padding: 12px 14px; background: #efe8d8; border-radius: 12px;">
-                <div style="font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #5a5447;">Activation code</div>
-                <div style="font-size: 24px; font-weight: 800; margin-top: 7px;">${activationCode}</div>
-              </div>
-            </div>
-          </div>
-          <div style="margin-top: 20px; border-top: 1px solid #e4ddcf; padding-top: 18px; font-size: 14px; line-height: 1.7; color: #4b4b4b;">
-            <div style="font-weight: 700; color: #171a2c; margin-bottom: 6px;">Quick setup details</div>
-            <div>Member ID: <strong>${memberId}</strong></div>
-            <div>Activation code: <strong>${activationCode}</strong></div>
-            <div>QR payload: <strong>${qrPayload || "Unavailable"}</strong></div>
-          </div>
-          <div style="margin-top: 18px; font-size: 14px; line-height: 1.7; color: #4b4b4b;">Use your member ID and activation code on the BarberBro customer app to finish setting up your account. Keep this email handy — your QR card is also your quick check-in ID.</div>
-        </div>
-      </div>
-    </div>
+    <!doctype html>
+    <html>
+      <body style="margin:0;padding:0;background:#f3f1ec;font-family:Arial,Helvetica,sans-serif;color:#20221d;">
+        <div style="display:none;max-height:0;overflow:hidden;">Your BarberBro membership setup details are inside.</div>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f1ec;padding:32px 12px;">
+          <tr><td align="center">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e8e4da;border-radius:12px;overflow:hidden;">
+              <tr><td style="padding:24px 28px;background:#20211c;color:#f4efe6;">
+                <div style="font-size:13px;font-weight:bold;letter-spacing:2px;">BARBER<span style="color:#d8b66a;">BRO</span></div>
+                <div style="margin-top:22px;font-size:25px;font-weight:bold;line-height:1.3;">Welcome, ${safeDisplayName}</div>
+                <div style="margin-top:7px;font-size:14px;line-height:1.6;color:#c5c0b5;">Your membership setup details are ready.</div>
+              </td></tr>
+              <tr><td style="padding:26px 28px 28px;">
+                <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#55564e;">Enter these details in the BarberBro app to activate your account.</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr><td style="padding:14px 16px;background:#f7f5f0;border:1px solid #e9e4d8;border-radius:8px;">
+                    <div style="font-size:11px;font-weight:bold;letter-spacing:1.4px;color:#777267;">MEMBER ID</div>
+                    <div style="margin-top:7px;font-size:21px;font-weight:bold;letter-spacing:1px;color:#20211c;">${safeMemberId}</div>
+                  </td></tr>
+                  <tr><td height="12" style="font-size:0;line-height:0;">&nbsp;</td></tr>
+                  <tr><td style="padding:14px 16px;background:#fbf6e9;border:1px solid #eadbb5;border-radius:8px;">
+                    <div style="font-size:11px;font-weight:bold;letter-spacing:1.4px;color:#76623c;">ACTIVATION CODE</div>
+                    <div style="margin-top:7px;font-size:25px;font-weight:bold;letter-spacing:2px;color:#29251b;">${safeActivationCode}</div>
+                  </td></tr>
+                </table>
+                <p style="margin:18px 0 0;font-size:13px;line-height:1.6;color:#66665d;">This activation code expires in 24 hours. For your security, don’t share it with anyone.</p>
+              </td></tr>
+              <tr><td style="padding:16px 28px;background:#f7f6f2;border-top:1px solid #ece9e1;font-size:12px;line-height:1.6;color:#77766e;">
+                If you weren’t expecting this email, you can ignore it.
+              </td></tr>
+            </table>
+          </td></tr>
+        </table>
+      </body>
+    </html>
   `;
 
-  const text = `Welcome, ${displayName}\n\nMember ID: ${memberId}\nActivation code: ${activationCode}\nQR payload: ${qrPayload || "Unavailable"}\n\nUse your member ID and activation code on the BarberBro customer app to finish setting up your account.`;
+  const text = `BARBERBRO MEMBERSHIP\n\nWelcome, ${displayName}!\n\nEnter these details in the BarberBro app to activate your account.\n\nMember ID: ${memberId}\nActivation code: ${activationCode}\n\nThis activation code expires in 24 hours. For your security, don't share it with anyone.\n\nIf you weren't expecting this email, you can ignore it.`;
 
   if (resendApiKey) {
     if (!process.env.EMAIL_FROM) {
@@ -188,7 +191,7 @@ QR payload: ${qrPayload}`;
         body: JSON.stringify({
           from,
           to: [customer.email],
-          subject: "Your BarberBro member card and activation code",
+          subject: "Your BarberBro activation details",
           text,
           html,
         }),
@@ -232,7 +235,7 @@ QR payload: ${qrPayload}`;
   await transporter.sendMail({
     from,
     to: customer.email,
-    subject: "Your BarberBro member card and activation code",
+    subject: "Your BarberBro activation details",
     text,
     html,
   });
@@ -582,6 +585,29 @@ router.get("/visits", authenticateToken, async (req, res) => {
   }
 });
 
+router.get("/rewards/history", authenticateToken, async (req, res) => {
+  if (req.auth.role !== "customer") {
+    return res.status(403).json({ error: "Customer access only" });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT id, reward_name, stamps_required,
+              COALESCE(redeemed_at, created_at) AS redeemed_at
+       FROM rewards
+       WHERE customer_id = $1 AND status = 'redeemed'
+       ORDER BY COALESCE(redeemed_at, created_at) DESC, id DESC
+       LIMIT 50`,
+      [req.auth.customerId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Customer reward history failed:", error.message);
+    res.status(500).json({ error: "Unable to load reward history" });
+  }
+});
+
 router.post("/rewards/redeem", authenticateToken, async (req, res) => {
   if (req.auth.role !== "customer") {
     return res.status(403).json({ error: "Customer access only" });
@@ -639,9 +665,10 @@ router.post("/rewards/redeem", authenticateToken, async (req, res) => {
     }
 
     const remainingStamps = customer.loyalty_stamps - reward.required_stamps;
-    await client.query(
+    const redemptionResult = await client.query(
       `INSERT INTO rewards (customer_id, reward_name, stamps_required, status, redeemed_at)
-       VALUES ($1, $2, $3, 'redeemed', NOW())`,
+       VALUES ($1, $2, $3, 'redeemed', NOW())
+       RETURNING id, redeemed_at`,
       [customer.id, reward.name, reward.required_stamps]
     );
 
@@ -662,6 +689,12 @@ router.post("/rewards/redeem", authenticateToken, async (req, res) => {
         name: reward.name,
         stamps_required: reward.required_stamps,
         remaining_stamps: remainingStamps,
+      },
+      redemption: {
+        id: redemptionResult.rows[0].id,
+        reward_name: reward.name,
+        stamps_required: reward.required_stamps,
+        redeemed_at: redemptionResult.rows[0].redeemed_at,
       },
     });
   } catch (error) {

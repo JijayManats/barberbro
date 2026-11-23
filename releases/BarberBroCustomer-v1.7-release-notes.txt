@@ -1,0 +1,6 @@
+BarberBro Customer Release v1.7
+- Choose from 13 haircut styles with photos and pin favorite styles for quick selection
+- View customer reward redemption history
+- Receive activation details as a styled email with plain-text member ID and code
+- Install over version 1.6 without uninstalling
+- App version 1.7 (version code 7)

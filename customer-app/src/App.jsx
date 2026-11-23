@@ -1,6 +1,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
+import buzzCutImage from './assets/haircuts/buzz-cut.jpg'
+import crewCutImage from './assets/haircuts/crew-cut.jpg'
+import lowFadeImage from './assets/haircuts/low-fade.jpg'
+import highFadeImage from './assets/haircuts/high-fade.jpg'
+import taperCutImage from './assets/haircuts/taper-cut.jpg'
+import undercutImage from './assets/haircuts/undercut.jpg'
+import pompadourImage from './assets/haircuts/pompadour.jpg'
+import sidePartImage from './assets/haircuts/side-part.jpg'
+import texturedCropImage from './assets/haircuts/textured-crop.jpg'
+import slickBackImage from './assets/haircuts/slick-back.jpg'
+import spikyTopImage from './assets/haircuts/spiky-top.jpg'
+import curlyTopImage from './assets/haircuts/curly-top.jpg'
+import mediumFlowImage from './assets/haircuts/medium-flow.jpg'
 import './App.css'
 
 const API_URL =
@@ -15,10 +28,35 @@ const menuItems = [
 ]
 
 const visitServices = [
-  { code: '1', name: 'Classic Haircut' },
-  { code: '2', name: 'Haircut + Styling' },
-  { code: '3', name: 'Haircut + Shave' },
+  { code: '1', name: 'Buzz Cut', image: buzzCutImage },
+  { code: '2', name: 'Crew Cut', image: crewCutImage },
+  { code: '3', name: 'Low Fade', image: lowFadeImage },
+  { code: '4', name: 'High Fade', image: highFadeImage },
+  { code: '5', name: 'Taper Cut', image: taperCutImage },
+  { code: '6', name: 'Undercut', image: undercutImage },
+  { code: '7', name: 'Pompadour', image: pompadourImage },
+  { code: '8', name: 'Side Part', image: sidePartImage },
+  { code: '9', name: 'Textured Crop', image: texturedCropImage },
+  { code: '10', name: 'Slick Back', image: slickBackImage },
+  { code: '11', name: 'Spiky Top', image: spikyTopImage },
+  { code: '12', name: 'Curly Top', image: curlyTopImage },
+  { code: '13', name: 'Medium Flow', image: mediumFlowImage },
 ]
+
+const favoriteHaircutsStorageKey = 'barberbro_favorite_haircuts'
+
+function getFavoriteHaircutCodes() {
+  try {
+    const savedFavorites = JSON.parse(
+      localStorage.getItem(favoriteHaircutsStorageKey) || '[]'
+    )
+    return Array.isArray(savedFavorites)
+      ? savedFavorites.filter((code) => visitServices.some((service) => service.code === code))
+      : []
+  } catch {
+    return []
+  }
+}
 
 const money = (value) =>
   new Intl.NumberFormat('en-PH', {
@@ -97,6 +135,7 @@ function App() {
   const [customer, setCustomer] = useState(null)
   const [visits, setVisits] = useState([])
   const [rewardTemplates, setRewardTemplates] = useState([])
+  const [rewardHistory, setRewardHistory] = useState([])
   const [barbers, setBarbers] = useState([])
   const [dataLoading, setDataLoading] = useState(false)
   const [dataError, setDataError] = useState('')
@@ -104,7 +143,9 @@ function App() {
   const [rewardError, setRewardError] = useState('')
   const [redeemingRewardId, setRedeemingRewardId] = useState(null)
   const [barberError, setBarberError] = useState('')
-  const [visitService, setVisitService] = useState('Classic Haircut')
+  const [visitService, setVisitService] = useState('1')
+  const [favoriteHaircutCodes, setFavoriteHaircutCodes] = useState(getFavoriteHaircutCodes)
+  const [favoriteHaircutError, setFavoriteHaircutError] = useState('')
   const [visitBarber, setVisitBarber] = useState('Michael')
   const [visitAmount, setVisitAmount] = useState('100')
   const [generatedVisitQr, setGeneratedVisitQr] = useState('')
@@ -115,6 +156,7 @@ function App() {
     setCustomer(null)
     setVisits([])
     setRewardTemplates([])
+    setRewardHistory([])
     setPassword('')
     setLoginError('')
     setDataError('')
@@ -230,10 +272,11 @@ function App() {
       requestInFlight = true
       if (showLoading) setDataLoading(true)
       try {
-        const [profile, visitHistory, activeRewards] = await Promise.all([
+        const [profile, visitHistory, activeRewards, redemptionHistory] = await Promise.all([
           apiRequest('/auth/me', token),
           apiRequest('/auth/visits', token),
           apiRequest('/reward-templates', token),
+          apiRequest('/auth/rewards/history', token),
         ])
 
         if (!active) return
@@ -241,6 +284,7 @@ function App() {
         setCustomer(profile)
         setVisits(Array.isArray(visitHistory) ? visitHistory : [])
         setRewardTemplates(Array.isArray(activeRewards) ? activeRewards : [])
+        setRewardHistory(Array.isArray(redemptionHistory) ? redemptionHistory : [])
         setDataError('')
       } catch (error) {
         if (!active) return
@@ -406,11 +450,17 @@ function App() {
     (reward) => stamps < Number(reward.required_stamps)
   ) || rewardTemplates[0]
   const selectedVisitBarber = barbers.find((item) => item.name === visitBarber)
+  const selectedVisitService = visitServices.find((service) => service.code === visitService)
+  const orderedVisitServices = [...visitServices].sort(
+    (first, second) =>
+      Number(favoriteHaircutCodes.includes(second.code)) -
+      Number(favoriteHaircutCodes.includes(first.code))
+  )
   const visitQrValue = customer && selectedVisitBarber
     ? [
-        'BBV2',
+        'BBV3',
         customer.id,
-        visitServices.find((service) => service.name === visitService)?.code || '1',
+        visitService,
         selectedVisitBarber.id,
         String(Number(visitAmount) || 0),
       ].join('|')
@@ -424,6 +474,20 @@ function App() {
     }
 
     setGeneratedVisitQr(visitQrValue)
+  }
+
+  function toggleFavoriteHaircut(code) {
+    const nextFavorites = favoriteHaircutCodes.includes(code)
+      ? favoriteHaircutCodes.filter((favoriteCode) => favoriteCode !== code)
+      : [...favoriteHaircutCodes, code]
+
+    try {
+      localStorage.setItem(favoriteHaircutsStorageKey, JSON.stringify(nextFavorites))
+      setFavoriteHaircutCodes(nextFavorites)
+      setFavoriteHaircutError('')
+    } catch {
+      setFavoriteHaircutError('Favorites could not be saved in this browser.')
+    }
   }
 
   async function redeemCustomerReward(reward) {
@@ -446,6 +510,10 @@ function App() {
       setCustomer((current) => current
         ? { ...current, loyalty_stamps: result.reward.remaining_stamps }
         : current)
+      setRewardHistory((current) => [
+        result.redemption,
+        ...current.filter((redemption) => redemption.id !== result.redemption.id),
+      ])
       setRewardNotice(
         `${result.reward.name} redeemed. ${result.reward.remaining_stamps} stamps remain.`
       )
@@ -910,21 +978,48 @@ function App() {
                   <div className="panel-heading">
                     <div><h2>Visit details</h2><p>Confirm these with the barber before generating your code.</p></div>
                   </div>
+                  <section className="haircut-picker" aria-labelledby="haircut-picker-title">
+                    <div className="haircut-picker-heading">
+                      <h3 id="haircut-picker-title">Choose a haircut</h3>
+                      <span>Favorites appear first</span>
+                    </div>
+                    <div className="haircut-options" role="group" aria-label="Haircut styles">
+                      {orderedVisitServices.map((service) => {
+                        const isSelected = visitService === service.code
+                        const isFavorite = favoriteHaircutCodes.includes(service.code)
+
+                        return (
+                          <article className={`haircut-option${isSelected ? ' is-selected' : ''}`} key={service.code}>
+                            <button
+                              className="haircut-option-select"
+                              type="button"
+                              aria-pressed={isSelected}
+                              onClick={() => {
+                                setVisitService(service.code)
+                                setGeneratedVisitQr('')
+                              }}
+                            >
+                              <img src={service.image} alt={`${service.name} hairstyle example`} />
+                              <span>{service.name}</span>
+                            </button>
+                            <button
+                              className={`haircut-favorite${isFavorite ? ' is-favorite' : ''}`}
+                              type="button"
+                              aria-label={`${isFavorite ? 'Remove' : 'Add'} ${service.name} ${isFavorite ? 'from' : 'to'} favorites`}
+                              aria-pressed={isFavorite}
+                              onClick={() => toggleFavoriteHaircut(service.code)}
+                            >
+                              {isFavorite ? '★' : '☆'}
+                            </button>
+                          </article>
+                        )
+                      })}
+                    </div>
+                    {favoriteHaircutError && (
+                      <p className="haircut-favorite-error" role="alert">{favoriteHaircutError}</p>
+                    )}
+                  </section>
                   <div className="visit-qr-form">
-                    <label>
-                      Service
-                      <select
-                        value={visitService}
-                        onChange={(event) => {
-                          setVisitService(event.target.value)
-                          setGeneratedVisitQr('')
-                        }}
-                      >
-                        {visitServices.map((service) => (
-                          <option key={service.code}>{service.name}</option>
-                        ))}
-                      </select>
-                    </label>
                     <label>
                       Barber
                       <select
@@ -970,7 +1065,7 @@ function App() {
                         <VisitQrCode value={generatedVisitQr} />
                       </div>
                       <h2>Show this code to the admin</h2>
-                      <p>{visitService} · {visitBarber} · {money(visitAmount)}</p>
+                      <p>{selectedVisitService?.name || 'Buzz Cut'} · {visitBarber} · {money(visitAmount)}</p>
                       <span className="ticket-member-code">{customer.member_code}</span>
                     </>
                   ) : (
@@ -1052,6 +1147,28 @@ function App() {
                   </div>
                 ) : (
                   <p className="reward-empty">No active rewards are available right now.</p>
+                )}
+              </div>
+              <div className="panel reward-history-panel">
+                <div className="panel-heading">
+                  <div><h2>Redemption history</h2><p>Your previously claimed rewards.</p></div>
+                  <span className="history-count">{rewardHistory.length} redeemed</span>
+                </div>
+                {rewardHistory.length > 0 ? (
+                  <div className="reward-history-list">
+                    {rewardHistory.map((redemption) => (
+                      <div className="visit-row reward-history-row" key={redemption.id}>
+                        <div className="visit-date-icon reward-history-icon">✦</div>
+                        <div className="visit-info">
+                          <strong>{redemption.reward_name}</strong>
+                          <span>{formatDate(redemption.redeemed_at)} · {redemption.stamps_required} stamps</span>
+                        </div>
+                        <span className="reward-history-status">Redeemed</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="reward-empty">You haven’t redeemed a reward yet.</p>
                 )}
               </div>
               <div className="panel">
