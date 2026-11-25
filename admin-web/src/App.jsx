@@ -1,6 +1,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, getAdminToken, saveAdminToken, clearAdminToken } from './api'
+import { api, getAdminToken, saveAdminToken, clearAdminToken, subscribeToUpdates } from './api'
 import './App.css'
 
 const target = 10
@@ -56,6 +56,29 @@ function normalizeRewardRedemption(redemption) {
     reward: redemption.reward_name,
     stamps: Number(redemption.stamps_required || 0),
     date: formatDate(redemption.redeemed_at),
+  }
+}
+
+function normalizeBarberStats(barber) {
+  return {
+    id: barber.id,
+    name: barber.name,
+    specialty: barber.specialty || 'General barber',
+    isActive: Boolean(barber.is_active),
+    haircuts: {
+      today: Number(barber.haircuts_today || 0),
+      week: Number(barber.haircuts_this_week || 0),
+      month: Number(barber.haircuts_this_month || 0),
+      year: Number(barber.haircuts_this_year || 0),
+    },
+    earnings: {
+      today: Number(barber.earnings_today || 0),
+      week: Number(barber.earnings_this_week || 0),
+      month: Number(barber.earnings_this_month || 0),
+      year: Number(barber.earnings_this_year || 0),
+    },
+    topServices: Array.isArray(barber.top_services) ? barber.top_services : [],
+    topCustomers: Array.isArray(barber.top_customers) ? barber.top_customers : [],
   }
 }
 
@@ -334,8 +357,10 @@ function App() {
   const [activationCodeCustomerId, setActivationCodeCustomerId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [lastRefreshedAt, setLastRefreshedAt] = useState(null)
+  const [liveStatus, setLiveStatus] = useState('connecting')
   const [saving, setSaving] = useState(false)
   const [barbers, setBarbers] = useState([])
+  const [barberStats, setBarberStats] = useState([])
   const [rewardRedemptions, setRewardRedemptions] = useState([])
   const [showAddCustomer, setShowAddCustomer] = useState(false)
   const [qrScannerOpen, setQrScannerOpen] = useState(false)
@@ -398,11 +423,12 @@ function App() {
 
     const refresh = (async () => {
       try {
-        const [dashboard, customerRows, visitRows, barberRows, rewardRows, redemptionRows] = await Promise.all([
+        const [dashboard, customerRows, visitRows, barberRows, barberStatRows, rewardRows, redemptionRows] = await Promise.all([
           api.getDashboard(),
           api.getCustomers(),
           api.getVisits(),
           api.getBarbers(),
+          api.getBarberStats(),
           api.getRewardTemplates(),
           api.getRewardRedemptions(),
         ])
@@ -411,6 +437,7 @@ function App() {
         setCustomers(customerRows.map(normalizeCustomer))
         setVisits(visitRows.map(normalizeVisit))
         setBarbers(Array.isArray(barberRows) ? barberRows : [])
+        setBarberStats(Array.isArray(barberStatRows) ? barberStatRows.map(normalizeBarberStats) : [])
         setRewardTemplates(Array.isArray(rewardRows) ? rewardRows : [])
         setRewardRedemptions(redemptionRows.map(normalizeRewardRedemption))
         setLastRefreshedAt(new Date())
@@ -433,6 +460,8 @@ function App() {
     if (!token) {
       setCustomers([])
       setVisits([])
+      setBarbers([])
+      setBarberStats([])
       setRewardRedemptions([])
       setStats({ total_customers: 0, visits_today: 0, total_revenue: 0 })
       setLoading(false)
@@ -449,7 +478,7 @@ function App() {
       if (document.visibilityState === 'visible') loadData({ background: true })
     }
 
-    const refreshTimer = window.setInterval(refreshWhenVisible, 10000)
+    const refreshTimer = window.setInterval(refreshWhenVisible, 30000)
     document.addEventListener('visibilitychange', refreshWhenVisible)
     window.addEventListener('focus', refreshWhenVisible)
 
@@ -458,6 +487,19 @@ function App() {
       document.removeEventListener('visibilitychange', refreshWhenVisible)
       window.removeEventListener('focus', refreshWhenVisible)
     }
+  }, [loadData, token])
+
+  useEffect(() => {
+    if (!token) return undefined
+
+    return subscribeToUpdates(
+      token,
+      () => {
+        if (document.visibilityState === 'visible') loadData({ background: true })
+      },
+      setLiveStatus,
+      () => window.dispatchEvent(new Event('barberbro-admin-unauthorized'))
+    )
   }, [loadData, token])
 
   useEffect(() => {
@@ -1069,11 +1111,15 @@ function App() {
             </p>
             <h1>{activePage}</h1>
           </div>
-          <div className="admin-open-label">
+          <div className={`admin-open-label ${liveStatus === 'connected' ? '' : 'admin-live-reconnecting'}`}>
             <span />
-            {lastRefreshedAt
-              ? `Live updates · refreshed ${lastRefreshedAt.toLocaleTimeString()}`
-              : 'Connecting to live data...'}
+            {liveStatus === 'connected'
+              ? lastRefreshedAt
+                ? `Live · refreshed ${lastRefreshedAt.toLocaleTimeString()}`
+                : 'Live updates connected'
+              : liveStatus === 'reconnecting'
+                ? 'Reconnecting to live updates...'
+                : 'Connecting to live updates...'}
           </div>
         </header>
 
@@ -1186,32 +1232,52 @@ function App() {
         )}
 
         {activePage === 'Barbers' && !loading && (
-          <section className="admin-panel">
-            <div className="admin-panel-heading">
-              <div><h2>Barber Directory</h2><p>Manage the barbers available for customer visits.</p></div>
-              <button className="admin-primary" onClick={() => openBarberModal()}>＋ Add Barber</button>
-            </div>
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead><tr><th>NAME</th><th>SPECIALTY</th><th>ACTION</th></tr></thead>
-                <tbody>
-                  {barbers.map((barber) => (
-                    <tr key={barber.id}>
-                      <td><strong>{barber.name}</strong></td>
-                      <td>{barber.specialty || 'General barber'}</td>
-                      <td className="admin-actions">
-                        <div className="admin-action-stack">
-                          <button className="admin-action-button" onClick={() => openBarberModal(barber)}>Edit</button>
-                          <button className="admin-action-button admin-delete-button" onClick={() => removeBarber(barber)}>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
+          <>
+            <section className="admin-panel">
+              <div className="admin-panel-heading">
+                <div>
+                  <h2>Barber performance</h2>
+                  <p>Haircuts and recorded sales by Manila time. Week starts Monday; top styles and customers are all-time.</p>
+                </div>
+              </div>
+              {barberStats.length ? (
+                <div className="barber-performance-grid">
+                  {barberStats.map((barber) => (
+                    <BarberPerformanceCard key={barber.id} barber={barber} />
                   ))}
-                </tbody>
-              </table>
-            </div>
-            {barbers.length === 0 && <p className="admin-empty">No barbers have been added yet.</p>}
-          </section>
+                </div>
+              ) : (
+                <p className="admin-empty">Add a barber to start tracking performance.</p>
+              )}
+            </section>
+
+            <section className="admin-panel">
+              <div className="admin-panel-heading">
+                <div><h2>Barber directory</h2><p>Manage the barbers available for customer visits.</p></div>
+                <button className="admin-primary" onClick={() => openBarberModal()}>＋ Add Barber</button>
+              </div>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>NAME</th><th>SPECIALTY</th><th>ACTION</th></tr></thead>
+                  <tbody>
+                    {barbers.map((barber) => (
+                      <tr key={barber.id}>
+                        <td><strong>{barber.name}</strong></td>
+                        <td>{barber.specialty || 'General barber'}</td>
+                        <td className="admin-actions">
+                          <div className="admin-action-stack">
+                            <button className="admin-action-button" onClick={() => openBarberModal(barber)}>Edit</button>
+                            <button className="admin-action-button admin-delete-button" onClick={() => removeBarber(barber)}>Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {barbers.length === 0 && <p className="admin-empty">No barbers have been added yet.</p>}
+            </section>
+          </>
         )}
 
         {activePage === 'Customers' && !loading && (
@@ -1442,6 +1508,86 @@ function SearchBox({ search, setSearch }) {
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, phone number, or member ID..." />
       {search && <button onClick={() => setSearch('')}>Clear</button>}
     </div>
+  )
+}
+
+function BarberPerformanceCard({ barber }) {
+  const periods = [
+    { key: 'today', label: 'Today' },
+    { key: 'week', label: 'This week' },
+    { key: 'month', label: 'This month' },
+    { key: 'year', label: 'This year' },
+  ]
+
+  return (
+    <article className="barber-performance-card">
+      <header className="barber-performance-header">
+        <div>
+          <h3>{barber.name}</h3>
+          <p>{barber.specialty}</p>
+        </div>
+        <span className={`admin-tag ${barber.isActive ? 'active-tag' : 'barber-inactive-tag'}`}>
+          {barber.isActive ? 'Active' : 'Inactive'}
+        </span>
+      </header>
+
+      <section className="barber-metric-section" aria-label="Haircut counts">
+        <h4>Haircuts recorded</h4>
+        <div className="barber-period-grid">
+          {periods.map((period) => (
+            <div className="barber-period-metric" key={period.key}>
+              <span>{period.label}</span>
+              <strong>{barber.haircuts[period.key]}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="barber-metric-section" aria-label="Recorded earnings">
+        <h4>Recorded earnings <span>Gross visit amounts</span></h4>
+        <div className="barber-period-grid">
+          {periods.map((period) => (
+            <div className="barber-period-metric" key={period.key}>
+              <span>{period.label}</span>
+              <strong>₱{formatMoney(barber.earnings[period.key])}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="barber-insights">
+        <section>
+          <h4>Most requested haircut</h4>
+          {barber.topServices.length ? (
+            <ul>
+              {barber.topServices.map((service) => (
+                <li key={service.name}>
+                  <span>{service.name}</span>
+                  <strong>{service.count} visits</strong>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="barber-insight-empty">No repeat style recorded yet.</p>
+          )}
+        </section>
+        <section>
+          <h4>Repeat customers</h4>
+          {barber.topCustomers.length ? (
+            <ul>
+              {barber.topCustomers.map((customer) => (
+                <li key={customer.name}>
+                  <span>{customer.name}</span>
+                  <strong>{customer.count} visits</strong>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="barber-insight-empty">No repeat customer recorded yet.</p>
+          )}
+        </section>
+      </div>
+    </article>
   )
 }
 

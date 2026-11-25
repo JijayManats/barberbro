@@ -1,7 +1,7 @@
 :root {
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
-  color: #171a2c;
-  background: #f7f8fc;
+  font-family: 'DM Sans', sans-serif;
+  color: #eeeae2;
+  background: #10100f;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -37,7 +37,7 @@ button {
 }
 
 button:focus-visible {
-  outline: 3px solid #b67aff;
+  outline: 2px solid #d7b56d;
   outline-offset: 3px;
 }
 
@@ -51,6 +51,6 @@ a {
 }
 
 ::selection {
-  color: white;
-  background: #8b42ec;
+  color: #10100f;
+  background: #d7b56d;
 }

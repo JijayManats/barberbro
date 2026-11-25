@@ -1,6 +1,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
+import API_URL, { subscribeToUpdates } from './api'
 import buzzCutImage from './assets/haircuts/buzz-cut.jpg'
 import crewCutImage from './assets/haircuts/crew-cut.jpg'
 import lowFadeImage from './assets/haircuts/low-fade.jpg'
@@ -15,9 +16,6 @@ import spikyTopImage from './assets/haircuts/spiky-top.jpg'
 import curlyTopImage from './assets/haircuts/curly-top.jpg'
 import mediumFlowImage from './assets/haircuts/medium-flow.jpg'
 import './App.css'
-
-const API_URL =
-  import.meta.env.VITE_API_URL || 'https://barberbro-1.onrender.com/api'
 
 const menuItems = [
   { id: 'dashboard', icon: '▦', label: 'Dashboard' },
@@ -123,12 +121,16 @@ function App() {
   const [memberCode, setMemberCode] = useState('')
   const [activationCode, setActivationCode] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showLoginPassword, setShowLoginPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [authMode, setAuthMode] = useState('login')
   const [loginError, setLoginError] = useState('')
   const [loginSuccess, setLoginSuccess] = useState('')
   const [loginLoading, setLoginLoading] = useState(false)
 
   const [apiStatus, setApiStatus] = useState('checking')
+  const [liveStatus, setLiveStatus] = useState('connecting')
   const [activePage, setActivePage] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -309,7 +311,7 @@ function App() {
     }
 
     loadCustomerData(true)
-    const refreshTimer = window.setInterval(refreshWhenVisible, 10000)
+    const refreshTimer = window.setInterval(refreshWhenVisible, 30000)
     document.addEventListener('visibilitychange', refreshWhenVisible)
     window.addEventListener('focus', refreshWhenVisible)
 
@@ -320,6 +322,24 @@ function App() {
       window.removeEventListener('focus', refreshWhenVisible)
     }
   }, [token, apiRequest, logout, refreshKey])
+
+  useEffect(() => {
+    if (!token) return undefined
+
+    return subscribeToUpdates(
+      token,
+      () => {
+        if (document.visibilityState === 'visible') {
+          setRefreshKey((current) => current + 1)
+        }
+      },
+      setLiveStatus,
+      () => {
+        logout()
+        setLoginError('Your session expired. Please sign in again.')
+      }
+    )
+  }, [token, logout])
 
   async function handleLogin(event) {
     event.preventDefault()
@@ -605,15 +625,26 @@ function App() {
                   />
 
                   <label htmlFor="password">Password</label>
-                  <input
-                    id="password"
-                    type="password"
-                    autoComplete="current-password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    required
-                  />
+                  <div className="password-input-wrap">
+                    <input
+                      id="password"
+                      type={showLoginPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="password-visibility-toggle"
+                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                      aria-pressed={showLoginPassword}
+                      onClick={() => setShowLoginPassword((visible) => !visible)}
+                    >
+                      {showLoginPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
 
                   <button
                     className="gold-button login-submit"
@@ -663,24 +694,48 @@ function App() {
                   />
 
                   <label htmlFor="new-password">Create password</label>
-                  <input
-                    id="new-password"
-                    type="password"
-                    placeholder="At least 8 characters"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    required
-                  />
+                  <div className="password-input-wrap">
+                    <input
+                      id="new-password"
+                      type={showNewPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      placeholder="At least 8 characters"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="password-visibility-toggle"
+                      aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                      aria-pressed={showNewPassword}
+                      onClick={() => setShowNewPassword((visible) => !visible)}
+                    >
+                      {showNewPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
 
                   <label htmlFor="confirm-password">Confirm password</label>
-                  <input
-                    id="confirm-password"
-                    type="password"
-                    placeholder="Re-enter password"
-                    value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
-                    required
-                  />
+                  <div className="password-input-wrap">
+                    <input
+                      id="confirm-password"
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      placeholder="Re-enter password"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="password-visibility-toggle"
+                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                      aria-pressed={showConfirmPassword}
+                      onClick={() => setShowConfirmPassword((visible) => !visible)}
+                    >
+                      {showConfirmPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
 
                   <button
                     className="gold-button login-submit"
@@ -698,7 +753,7 @@ function App() {
               <p className="form-error" role="alert">{loginError}</p>
             )}
             {loginSuccess && (
-              <p className="form-success" role="status">{loginSuccess}</p>
+              <p className="activation-success" role="status">{loginSuccess}</p>
             )}
 
             <div className="sidebar-footer login-status">
@@ -774,13 +829,13 @@ function App() {
         </div>
 
         <div className="sidebar-footer">
-          <span className={`status-dot ${apiStatus}`} />
+          <span className={`status-dot ${liveStatus === 'connected' ? 'connected' : liveStatus === 'reconnecting' ? 'disconnected' : ''}`} />
           <span>
-            {apiStatus === 'checking'
-              ? 'Connecting to server...'
-              : apiStatus === 'connected'
-                ? 'System connected'
-                : 'Server unavailable'}
+            {liveStatus === 'connected'
+              ? 'Live updates connected'
+              : liveStatus === 'reconnecting'
+                ? 'Reconnecting live updates...'
+                : 'Connecting live updates...'}
           </span>
         </div>
       </aside>

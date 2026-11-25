@@ -7,6 +7,7 @@ const {
   authenticateToken,
   requireAdmin,
 } = require("./auth-middleware");
+const { addRealtimeClient } = require("./realtime");
 
 const router = express.Router();
 
@@ -275,7 +276,11 @@ router.get("/reward-templates", async (req, res) => {
   }
 });
 
-// All routes in this file require an authenticated admin.
+router.get("/events", authenticateToken, (req, res) => {
+  addRealtimeClient(req, res);
+});
+
+// The remaining routes in this file require an authenticated admin.
 router.use(authenticateToken, requireAdmin);
 
 // Get dashboard statistics
@@ -309,6 +314,121 @@ router.get("/barbers/admin", async (req, res) => {
   } catch (error) {
     console.error("Admin barber query failed:", error.message);
     res.status(500).json({ error: "Failed to load barbers" });
+  }
+});
+
+router.get("/barbers/stats", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      WITH period_bounds AS (
+        SELECT
+          date_trunc('day', NOW() AT TIME ZONE 'Asia/Manila')
+            AT TIME ZONE 'Asia/Manila' AS day_start,
+          date_trunc('week', NOW() AT TIME ZONE 'Asia/Manila')
+            AT TIME ZONE 'Asia/Manila' AS week_start,
+          date_trunc('month', NOW() AT TIME ZONE 'Asia/Manila')
+            AT TIME ZONE 'Asia/Manila' AS month_start,
+          date_trunc('year', NOW() AT TIME ZONE 'Asia/Manila')
+            AT TIME ZONE 'Asia/Manila' AS year_start
+      ),
+      barber_periods AS (
+        SELECT
+          b.id AS barber_id,
+          COUNT(v.id) FILTER (WHERE v.visited_at >= bounds.day_start) AS haircuts_today,
+          COUNT(v.id) FILTER (WHERE v.visited_at >= bounds.week_start) AS haircuts_this_week,
+          COUNT(v.id) FILTER (WHERE v.visited_at >= bounds.month_start) AS haircuts_this_month,
+          COUNT(v.id) FILTER (WHERE v.visited_at >= bounds.year_start) AS haircuts_this_year,
+          COALESCE(SUM(v.amount) FILTER (WHERE v.visited_at >= bounds.day_start), 0) AS earnings_today,
+          COALESCE(SUM(v.amount) FILTER (WHERE v.visited_at >= bounds.week_start), 0) AS earnings_this_week,
+          COALESCE(SUM(v.amount) FILTER (WHERE v.visited_at >= bounds.month_start), 0) AS earnings_this_month,
+          COALESCE(SUM(v.amount) FILTER (WHERE v.visited_at >= bounds.year_start), 0) AS earnings_this_year
+        FROM barbers b
+        CROSS JOIN period_bounds bounds
+        LEFT JOIN visits v
+          ON LOWER(BTRIM(v.barber_name)) = LOWER(BTRIM(b.name))
+        GROUP BY b.id, bounds.day_start, bounds.week_start, bounds.month_start, bounds.year_start
+      ),
+      service_counts AS (
+        SELECT
+          LOWER(BTRIM(barber_name)) AS barber_key,
+          MIN(BTRIM(service)) AS service,
+          COUNT(*) AS request_count
+        FROM visits
+        WHERE NULLIF(BTRIM(barber_name), '') IS NOT NULL
+          AND NULLIF(BTRIM(service), '') IS NOT NULL
+        GROUP BY LOWER(BTRIM(barber_name)), LOWER(BTRIM(service))
+        HAVING COUNT(*) >= 2
+      ),
+      ranked_services AS (
+        SELECT *,
+          RANK() OVER (PARTITION BY barber_key ORDER BY request_count DESC) AS popularity_rank
+        FROM service_counts
+      ),
+      top_services AS (
+        SELECT
+          barber_key,
+          JSON_AGG(
+            JSON_BUILD_OBJECT('name', service, 'count', request_count)
+            ORDER BY service
+          ) AS services
+        FROM ranked_services
+        WHERE popularity_rank = 1
+        GROUP BY barber_key
+      ),
+      customer_counts AS (
+        SELECT
+          LOWER(BTRIM(v.barber_name)) AS barber_key,
+          c.id AS customer_id,
+          c.full_name,
+          COUNT(*) AS visit_count
+        FROM visits v
+        JOIN customers c ON c.id = v.customer_id
+        WHERE NULLIF(BTRIM(v.barber_name), '') IS NOT NULL
+        GROUP BY LOWER(BTRIM(v.barber_name)), c.id, c.full_name
+        HAVING COUNT(*) >= 2
+      ),
+      ranked_customers AS (
+        SELECT *,
+          RANK() OVER (PARTITION BY barber_key ORDER BY visit_count DESC) AS frequency_rank
+        FROM customer_counts
+      ),
+      top_customers AS (
+        SELECT
+          barber_key,
+          JSON_AGG(
+            JSON_BUILD_OBJECT('name', full_name, 'count', visit_count)
+            ORDER BY full_name
+          ) AS customers
+        FROM ranked_customers
+        WHERE frequency_rank = 1
+        GROUP BY barber_key
+      )
+      SELECT
+        b.id,
+        b.name,
+        b.specialty,
+        b.is_active,
+        COALESCE(p.haircuts_today, 0) AS haircuts_today,
+        COALESCE(p.haircuts_this_week, 0) AS haircuts_this_week,
+        COALESCE(p.haircuts_this_month, 0) AS haircuts_this_month,
+        COALESCE(p.haircuts_this_year, 0) AS haircuts_this_year,
+        COALESCE(p.earnings_today, 0) AS earnings_today,
+        COALESCE(p.earnings_this_week, 0) AS earnings_this_week,
+        COALESCE(p.earnings_this_month, 0) AS earnings_this_month,
+        COALESCE(p.earnings_this_year, 0) AS earnings_this_year,
+        COALESCE(s.services, '[]'::json) AS top_services,
+        COALESCE(c.customers, '[]'::json) AS top_customers
+      FROM barbers b
+      JOIN barber_periods p ON p.barber_id = b.id
+      LEFT JOIN top_services s ON s.barber_key = LOWER(BTRIM(b.name))
+      LEFT JOIN top_customers c ON c.barber_key = LOWER(BTRIM(b.name))
+      ORDER BY b.is_active DESC, b.name ASC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Barber statistics load failed:", error.message);
+    res.status(500).json({ error: "Failed to load barber statistics" });
   }
 });
 

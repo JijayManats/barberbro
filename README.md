@@ -3,7 +3,9 @@
 BarberBro is a full-stack barbershop membership system with:
 
 - Admin dashboard for managing customers, visits, and rewards
+- Barber performance statistics for haircut counts, gross visit sales, popular styles, and repeat customers
 - Customer portal for loyalty tracking and account access
+- Authenticated live updates across the admin portal and customer app
 - PostgreSQL-backed data layer
 - JWT authentication and protected admin routes
 
@@ -101,6 +103,10 @@ Activation emails use the Gmail API over HTTPS and do not require a custom domai
 Render will provide the `PORT` automatically; do not hardcode it unless you are explicitly using a custom setup.
 
 The repository also includes a `render.yaml` file that can be used with Render Blueprint deployments.
+
+The admin **Barbers** page summarizes recorded visits and gross visit amounts for today, the current week, month, and year using Asia/Manila time. It also shows all tied top haircut styles and repeat customers across all recorded visits; style and customer insights only appear after at least two matching visits.
+
+While signed in, both frontends receive authenticated server-sent update events after successful API changes and refresh their data automatically. They reconnect when the connection drops and retain periodic refreshes as a fallback.
 
 ### Fixing activation-code email delivery on Render
 
