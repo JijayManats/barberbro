@@ -361,6 +361,7 @@ function App() {
   const [saving, setSaving] = useState(false)
   const [barbers, setBarbers] = useState([])
   const [barberStats, setBarberStats] = useState([])
+  const [selectedBarberId, setSelectedBarberId] = useState(null)
   const [rewardRedemptions, setRewardRedemptions] = useState([])
   const [showAddCustomer, setShowAddCustomer] = useState(false)
   const [qrScannerOpen, setQrScannerOpen] = useState(false)
@@ -407,6 +408,7 @@ function App() {
     setError('')
     setNotice('')
     setActivationEmailRetryCustomer(null)
+    setSelectedBarberId(null)
     setActivePage('Dashboard')
   }, [])
 
@@ -922,6 +924,7 @@ function App() {
 
     try {
       await api.deleteBarber(barber.id)
+      if (selectedBarberId === barber.id) setSelectedBarberId(null)
       setNotice(`${barber.name} has been removed.`)
       await loadData()
     } catch (err) {
@@ -930,6 +933,16 @@ function App() {
       setSaving(false)
     }
   }
+
+  const selectedBarberRow = barbers.find((barber) => barber.id === selectedBarberId)
+  const selectedBarberStats = barberStats.find((barber) => barber.id === selectedBarberId)
+  const selectedBarber = selectedBarberRow
+    ? {
+        ...normalizeBarberStats(selectedBarberStats || selectedBarberRow),
+        specialty: selectedBarberRow.specialty || 'General barber',
+        isActive: Boolean(selectedBarberRow.is_active),
+      }
+    : null
 
   function openRewardModal(reward = null) {
     if (reward) {
@@ -1082,6 +1095,7 @@ function App() {
               className={`admin-nav-item ${activePage === page ? 'selected' : ''}`}
               aria-current={activePage === page ? 'page' : undefined}
               onClick={() => {
+                if (page === 'Barbers') setSelectedBarberId(null)
                 setActivePage(page)
                 setNotice('')
                 setError('')
@@ -1232,52 +1246,52 @@ function App() {
         )}
 
         {activePage === 'Barbers' && !loading && (
-          <>
-            <section className="admin-panel">
-              <div className="admin-panel-heading">
-                <div>
-                  <h2>Barber performance</h2>
-                  <p>Haircuts and recorded sales by Manila time. Week starts Monday; top styles and customers are all-time.</p>
-                </div>
+          <section className="admin-panel">
+            <div className="admin-panel-heading">
+              <div>
+                <h2>Barbers</h2>
+                <p>Select a barber to see haircut, earnings, and customer insights.</p>
               </div>
-              {barberStats.length ? (
-                <div className="barber-performance-grid">
-                  {barberStats.map((barber) => (
-                    <BarberPerformanceCard key={barber.id} barber={barber} />
-                  ))}
-                </div>
-              ) : (
-                <p className="admin-empty">Add a barber to start tracking performance.</p>
-              )}
-            </section>
+              <button className="admin-primary" onClick={() => openBarberModal()}>＋ Add Barber</button>
+            </div>
 
-            <section className="admin-panel">
-              <div className="admin-panel-heading">
-                <div><h2>Barber directory</h2><p>Manage the barbers available for customer visits.</p></div>
-                <button className="admin-primary" onClick={() => openBarberModal()}>＋ Add Barber</button>
+            <div className="barber-workspace">
+              <div className="barber-selector-list" role="group" aria-label="Barber list">
+                {barbers.map((barber) => (
+                  <button
+                    className={`barber-selector ${selectedBarberId === barber.id ? 'selected' : ''}`}
+                    key={barber.id}
+                    type="button"
+                    aria-pressed={selectedBarberId === barber.id}
+                    onClick={() => setSelectedBarberId(barber.id)}
+                  >
+                    <span className="barber-selector-copy">
+                      <strong>{barber.name}</strong>
+                      <small>{barber.specialty || 'General barber'}</small>
+                    </span>
+                    <span className={`barber-selector-status ${barber.is_active ? 'active' : ''}`}>
+                      {barber.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </button>
+                ))}
+                {barbers.length === 0 && (
+                  <p className="admin-empty">No barbers yet. Add one to start tracking performance.</p>
+                )}
               </div>
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead><tr><th>NAME</th><th>SPECIALTY</th><th>ACTION</th></tr></thead>
-                  <tbody>
-                    {barbers.map((barber) => (
-                      <tr key={barber.id}>
-                        <td><strong>{barber.name}</strong></td>
-                        <td>{barber.specialty || 'General barber'}</td>
-                        <td className="admin-actions">
-                          <div className="admin-action-stack">
-                            <button className="admin-action-button" onClick={() => openBarberModal(barber)}>Edit</button>
-                            <button className="admin-action-button admin-delete-button" onClick={() => removeBarber(barber)}>Delete</button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+              <div className="barber-detail-panel">
+                {selectedBarber ? (
+                  <BarberPerformanceDetails
+                    barber={selectedBarber}
+                    onEdit={() => openBarberModal(selectedBarber)}
+                    onDelete={() => removeBarber(selectedBarber)}
+                  />
+                ) : (
+                  <p className="barber-detail-empty">Choose a barber to view their performance.</p>
+                )}
               </div>
-              {barbers.length === 0 && <p className="admin-empty">No barbers have been added yet.</p>}
-            </section>
-          </>
+            </div>
+          </section>
         )}
 
         {activePage === 'Customers' && !loading && (
@@ -1511,7 +1525,7 @@ function SearchBox({ search, setSearch }) {
   )
 }
 
-function BarberPerformanceCard({ barber }) {
+function BarberPerformanceDetails({ barber, onEdit, onDelete }) {
   const periods = [
     { key: 'today', label: 'Today' },
     { key: 'week', label: 'This week' },
@@ -1520,40 +1534,41 @@ function BarberPerformanceCard({ barber }) {
   ]
 
   return (
-    <article className="barber-performance-card">
+    <div className="barber-performance-details" aria-live="polite">
       <header className="barber-performance-header">
         <div>
           <h3>{barber.name}</h3>
           <p>{barber.specialty}</p>
         </div>
-        <span className={`admin-tag ${barber.isActive ? 'active-tag' : 'barber-inactive-tag'}`}>
-          {barber.isActive ? 'Active' : 'Inactive'}
-        </span>
+        <div className="barber-detail-actions">
+          <span className={`admin-tag ${barber.isActive ? 'active-tag' : 'barber-inactive-tag'}`}>
+            {barber.isActive ? 'Active' : 'Inactive'}
+          </span>
+          <button className="admin-action-button" onClick={onEdit} type="button">Edit</button>
+          <button className="admin-action-button admin-delete-button" onClick={onDelete} type="button">Delete</button>
+        </div>
       </header>
 
-      <section className="barber-metric-section" aria-label="Haircut counts">
-        <h4>Haircuts recorded</h4>
-        <div className="barber-period-grid">
-          {periods.map((period) => (
-            <div className="barber-period-metric" key={period.key}>
-              <span>{period.label}</span>
-              <strong>{barber.haircuts[period.key]}</strong>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="barber-metric-section" aria-label="Recorded earnings">
-        <h4>Recorded earnings <span>Gross visit amounts</span></h4>
-        <div className="barber-period-grid">
-          {periods.map((period) => (
-            <div className="barber-period-metric" key={period.key}>
-              <span>{period.label}</span>
-              <strong>₱{formatMoney(barber.earnings[period.key])}</strong>
-            </div>
-          ))}
-        </div>
-      </section>
+      <div className="barber-charts-grid">
+        <BarberPeriodChart
+          title="Haircuts"
+          variant="haircuts"
+          metrics={periods.map((period) => ({
+            label: period.label,
+            value: barber.haircuts[period.key],
+          }))}
+          formatValue={(value) => String(value)}
+        />
+        <BarberPeriodChart
+          title="Earnings"
+          variant="earnings"
+          metrics={periods.map((period) => ({
+            label: period.label,
+            value: barber.earnings[period.key],
+          }))}
+          formatValue={(value) => `₱${formatMoney(value)}`}
+        />
+      </div>
 
       <div className="barber-insights">
         <section>
@@ -1587,7 +1602,37 @@ function BarberPerformanceCard({ barber }) {
           )}
         </section>
       </div>
-    </article>
+    </div>
+  )
+}
+
+function BarberPeriodChart({ title, variant, metrics, formatValue }) {
+  const maximum = Math.max(...metrics.map((metric) => metric.value), 0)
+
+  return (
+    <section className="barber-chart" aria-label={`${title} by period`}>
+      <h4>{title}</h4>
+      <ul className="barber-chart-list">
+        {metrics.map((metric) => {
+          const width = maximum > 0 && metric.value > 0
+            ? Math.max(4, (metric.value / maximum) * 100)
+            : 0
+
+          return (
+            <li className="barber-chart-row" key={metric.label}>
+              <span className="barber-chart-label">{metric.label}</span>
+              <span className="barber-chart-track" aria-hidden="true">
+                <span
+                  className={`barber-chart-fill barber-chart-fill-${variant}`}
+                  style={{ width: `${width}%` }}
+                />
+              </span>
+              <strong className="barber-chart-value">{formatValue(metric.value)}</strong>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
