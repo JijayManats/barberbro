@@ -938,7 +938,8 @@ function App() {
   const selectedBarberStats = barberStats.find((barber) => barber.id === selectedBarberId)
   const selectedBarber = selectedBarberRow
     ? {
-        ...normalizeBarberStats(selectedBarberStats || selectedBarberRow),
+        ...(selectedBarberStats || normalizeBarberStats(selectedBarberRow)),
+        name: selectedBarberRow.name,
         specialty: selectedBarberRow.specialty || 'General barber',
         isActive: Boolean(selectedBarberRow.is_active),
       }
