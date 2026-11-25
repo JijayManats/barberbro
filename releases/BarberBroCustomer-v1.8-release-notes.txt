@@ -1,0 +1,7 @@
+BarberBro Customer Release v1.8
+- Start visit tickets with no haircut or barber selected
+- Show haircut photos only after tapping Haircut
+- Reset visit choices each time the Visit tab is opened
+- Show account activation success in green
+- Install over version 1.7 without uninstalling
+- App version 1.8 (version code 8)

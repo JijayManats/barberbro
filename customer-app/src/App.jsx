@@ -125,6 +125,7 @@ function App() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [authMode, setAuthMode] = useState('login')
   const [loginError, setLoginError] = useState('')
+  const [loginSuccess, setLoginSuccess] = useState('')
   const [loginLoading, setLoginLoading] = useState(false)
 
   const [apiStatus, setApiStatus] = useState('checking')
@@ -143,10 +144,11 @@ function App() {
   const [rewardError, setRewardError] = useState('')
   const [redeemingRewardId, setRedeemingRewardId] = useState(null)
   const [barberError, setBarberError] = useState('')
-  const [visitService, setVisitService] = useState('1')
+  const [visitService, setVisitService] = useState('')
+  const [showHaircutOptions, setShowHaircutOptions] = useState(false)
   const [favoriteHaircutCodes, setFavoriteHaircutCodes] = useState(getFavoriteHaircutCodes)
   const [favoriteHaircutError, setFavoriteHaircutError] = useState('')
-  const [visitBarber, setVisitBarber] = useState('Michael')
+  const [visitBarber, setVisitBarber] = useState('')
   const [visitAmount, setVisitAmount] = useState('100')
   const [generatedVisitQr, setGeneratedVisitQr] = useState('')
 
@@ -159,6 +161,7 @@ function App() {
     setRewardHistory([])
     setPassword('')
     setLoginError('')
+    setLoginSuccess('')
     setDataError('')
     setRewardNotice('')
     setRewardError('')
@@ -225,9 +228,7 @@ function App() {
         const loadedBarbers = Array.isArray(rows) ? rows : []
         setBarbers(loadedBarbers)
         setVisitBarber((current) =>
-          loadedBarbers.some((barber) => barber.name === current)
-            ? current
-            : loadedBarbers[0]?.name || ''
+          loadedBarbers.some((barber) => barber.name === current) ? current : ''
         )
         setBarberError('')
       } catch {
@@ -323,6 +324,7 @@ function App() {
   async function handleLogin(event) {
     event.preventDefault()
     setLoginError('')
+    setLoginSuccess('')
 
     if (!email.trim() || !password) {
       setLoginError('Please enter your email and password.')
@@ -372,6 +374,7 @@ function App() {
   async function handleActivate(event) {
     event.preventDefault()
     setLoginError('')
+    setLoginSuccess('')
 
     if (!memberCode.trim() || !activationCode.trim() || !email.trim() || !password) {
       setLoginError('Please complete all activation fields.')
@@ -415,7 +418,7 @@ function App() {
       setActivationCode('')
       setConfirmPassword('')
       setPassword('')
-      setLoginError('Account activated successfully. You can sign in now.')
+      setLoginSuccess('Account activated successfully. You can sign in now.')
     } catch (error) {
       setLoginError(
         error.message === 'Failed to fetch'
@@ -428,6 +431,12 @@ function App() {
   }
 
   function navigate(page) {
+    if (page === 'visit') {
+      setVisitService('')
+      setShowHaircutOptions(false)
+      setVisitBarber('')
+      setGeneratedVisitQr('')
+    }
     setActivePage(page)
     setSidebarOpen(false)
   }
@@ -557,6 +566,7 @@ function App() {
                 onClick={() => {
                   setAuthMode('login')
                   setLoginError('')
+                  setLoginSuccess('')
                 }}
               >
                 Sign in
@@ -567,6 +577,7 @@ function App() {
                 onClick={() => {
                   setAuthMode('activate')
                   setLoginError('')
+                  setLoginSuccess('')
                 }}
               >
                 Activate account
@@ -685,6 +696,9 @@ function App() {
 
             {loginError && (
               <p className="form-error" role="alert">{loginError}</p>
+            )}
+            {loginSuccess && (
+              <p className="form-success" role="status">{loginSuccess}</p>
             )}
 
             <div className="sidebar-footer login-status">
@@ -980,41 +994,57 @@ function App() {
                   </div>
                   <section className="haircut-picker" aria-labelledby="haircut-picker-title">
                     <div className="haircut-picker-heading">
-                      <h3 id="haircut-picker-title">Choose a haircut</h3>
-                      <span>Favorites appear first</span>
+                      <h3 id="haircut-picker-title">Service</h3>
+                      <span>Choose your haircut first</span>
                     </div>
-                    <div className="haircut-options" role="group" aria-label="Haircut styles">
-                      {orderedVisitServices.map((service) => {
-                        const isSelected = visitService === service.code
-                        const isFavorite = favoriteHaircutCodes.includes(service.code)
+                    <button
+                      className="haircut-picker-toggle"
+                      type="button"
+                      aria-expanded={showHaircutOptions}
+                      aria-controls="haircut-options"
+                      onClick={() => {
+                        setShowHaircutOptions((isOpen) => !isOpen)
+                        setGeneratedVisitQr('')
+                      }}
+                    >
+                      <span>{selectedVisitService?.name || 'Haircut'}</span>
+                      <span>{showHaircutOptions ? 'Hide styles −' : selectedVisitService ? 'Change +' : 'Choose style +'}</span>
+                    </button>
+                    {showHaircutOptions && (
+                      <div className="haircut-options" id="haircut-options" role="group" aria-label="Haircut styles">
+                        {orderedVisitServices.map((service) => {
+                          const isSelected = visitService === service.code
+                          const isFavorite = favoriteHaircutCodes.includes(service.code)
 
-                        return (
-                          <article className={`haircut-option${isSelected ? ' is-selected' : ''}`} key={service.code}>
-                            <button
-                              className="haircut-option-select"
-                              type="button"
-                              aria-pressed={isSelected}
-                              onClick={() => {
-                                setVisitService(service.code)
-                                setGeneratedVisitQr('')
-                              }}
-                            >
-                              <img src={service.image} alt={`${service.name} hairstyle example`} />
-                              <span>{service.name}</span>
-                            </button>
-                            <button
-                              className={`haircut-favorite${isFavorite ? ' is-favorite' : ''}`}
-                              type="button"
-                              aria-label={`${isFavorite ? 'Remove' : 'Add'} ${service.name} ${isFavorite ? 'from' : 'to'} favorites`}
-                              aria-pressed={isFavorite}
-                              onClick={() => toggleFavoriteHaircut(service.code)}
-                            >
-                              {isFavorite ? '★' : '☆'}
-                            </button>
-                          </article>
-                        )
-                      })}
-                    </div>
+                          return (
+                            <article className={`haircut-option${isSelected ? ' is-selected' : ''}`} key={service.code}>
+                              <button
+                                className="haircut-option-select"
+                                type="button"
+                                aria-pressed={isSelected}
+                                onClick={() => {
+                                  setVisitService(service.code)
+                                  setShowHaircutOptions(false)
+                                  setGeneratedVisitQr('')
+                                }}
+                              >
+                                <img src={service.image} alt={`${service.name} hairstyle example`} />
+                                <span>{service.name}</span>
+                              </button>
+                              <button
+                                className={`haircut-favorite${isFavorite ? ' is-favorite' : ''}`}
+                                type="button"
+                                aria-label={`${isFavorite ? 'Remove' : 'Add'} ${service.name} ${isFavorite ? 'from' : 'to'} favorites`}
+                                aria-pressed={isFavorite}
+                                onClick={() => toggleFavoriteHaircut(service.code)}
+                              >
+                                {isFavorite ? '★' : '☆'}
+                              </button>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    )}
                     {favoriteHaircutError && (
                       <p className="haircut-favorite-error" role="alert">{favoriteHaircutError}</p>
                     )}
@@ -1029,9 +1059,10 @@ function App() {
                           setGeneratedVisitQr('')
                         }}
                       >
+                        <option value="" disabled>Choose a barber</option>
                         {barbers.length > 0 ? barbers.map((barber) => (
                           <option key={barber.id} value={barber.name}>{barber.name}</option>
-                        )) : <option>Michael</option>}
+                        )) : null}
                       </select>
                     </label>
                     <label>
@@ -1049,10 +1080,15 @@ function App() {
                       />
                     </label>
                   </div>
+                  {(!visitService || !selectedVisitBarber?.id) && (
+                    <p className="visit-ticket-form-hint">
+                      {!visitService ? 'Choose a haircut to continue.' : 'Choose a barber to continue.'}
+                    </p>
+                  )}
                   <button
                     className="gold-button visit-ticket-submit"
                     type="submit"
-                    disabled={!selectedVisitBarber?.id}
+                    disabled={!visitService || !selectedVisitBarber?.id}
                   >
                     Generate visit QR <span>→</span>
                   </button>
@@ -1065,7 +1101,7 @@ function App() {
                         <VisitQrCode value={generatedVisitQr} />
                       </div>
                       <h2>Show this code to the admin</h2>
-                      <p>{selectedVisitService?.name || 'Buzz Cut'} · {visitBarber} · {money(visitAmount)}</p>
+                      <p>{selectedVisitService.name} · {visitBarber} · {money(visitAmount)}</p>
                       <span className="ticket-member-code">{customer.member_code}</span>
                     </>
                   ) : (

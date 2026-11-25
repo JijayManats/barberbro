@@ -893,9 +893,37 @@ button:disabled {
   font-size: 9px;
 }
 
+.haircut-picker-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border: 1px solid #554b39;
+  border-radius: 8px;
+  color: #f4efe6;
+  background: #211e18;
+  text-align: left;
+  cursor: pointer;
+}
+
+.haircut-picker-toggle span:last-child {
+  color: #dfc17d;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.haircut-picker-toggle:focus-visible {
+  outline: 2px solid #dfc17d;
+  outline-offset: 2px;
+}
+
 .haircut-options {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  margin-top: 10px;
   gap: 9px;
 }
 
@@ -1008,6 +1036,22 @@ button:disabled {
 .visit-ticket-submit {
   width: 100%;
   margin-top: 20px;
+}
+
+.visit-ticket-submit:disabled {
+  border-color: #514a3c;
+  color: #a7a196;
+  background: #363229;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
+.visit-ticket-form-hint {
+  margin: 14px 0 -12px;
+  color: #b7ad98;
+  font-size: 10px;
+  text-align: center;
 }
 
 .visit-ticket-qr {
@@ -1877,6 +1921,15 @@ button:disabled {
   border-radius: 8px;
   background: rgba(225, 80, 80, 0.08);
   color: #ffb2b2;
+  line-height: 1.5;
+}
+
+.form-success {
+  padding: 12px 14px;
+  border: 1px solid rgba(91, 166, 100, 0.42);
+  border-radius: 8px;
+  background: rgba(91, 166, 100, 0.12);
+  color: #a9e3ad;
   line-height: 1.5;
 }
 
