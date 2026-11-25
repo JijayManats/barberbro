@@ -1040,12 +1040,12 @@ function App() {
           </p>
 
           <form className="admin-login-form" onSubmit={handleLogin}>
-            <label htmlFor="admin-username">Admin username</label>
+            <label htmlFor="admin-username">Username</label>
             <input
               id="admin-username"
               type="text"
               autoComplete="username"
-              placeholder="admin001"
+              placeholder="Enter your username"
               value={username}
               onChange={event => setUsername(event.target.value)}
               required
