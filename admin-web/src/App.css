@@ -86,22 +86,11 @@ a { color: inherit; text-decoration: none; }
 }
 
 .admin-login-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   color: #d3b36f;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 1.7px;
   margin-bottom: 18px;
-}
-
-.admin-login-eyebrow span {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #cba66b;
 }
 
 .admin-login-card h1 {
@@ -150,6 +139,36 @@ a { color: inherit; text-decoration: none; }
 .admin-login-form input:focus {
   border-color: #cba66b;
   outline: 2px solid #cba66b44;
+}
+
+.admin-password-input-wrap {
+  position: relative;
+  margin-top: 6px;
+}
+
+.admin-password-input-wrap input {
+  padding-right: 68px;
+  margin-top: 0;
+}
+
+.admin-password-visibility-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: #d8b66a;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.admin-password-visibility-toggle:focus-visible {
+  outline: 2px solid #d8b66a;
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .admin-login-form .admin-login-button {

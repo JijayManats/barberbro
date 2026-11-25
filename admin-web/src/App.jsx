@@ -340,6 +340,7 @@ function App() {
   const [token, setToken] = useState(() => getAdminToken())
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loginError, setLoginError] = useState('')
   const [loginLoading, setLoginLoading] = useState(false)
   const [customers, setCustomers] = useState([])
@@ -1033,7 +1034,7 @@ function App() {
             </div>
           </div>
 
-          <div className="admin-login-eyebrow"><span /> ADMIN ACCESS</div>
+          <div className="admin-login-eyebrow">ADMIN ACCESS</div>
           <h1>Welcome <span>back.</span></h1>
           <p className="admin-login-copy">
             Sign in to manage memberships, visits, rewards, and daily shop activity.
@@ -1052,15 +1053,26 @@ function App() {
             />
 
             <label htmlFor="admin-password">Password</label>
-            <input
-              id="admin-password"
-              type="password"
-              autoComplete="current-password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={event => setPassword(event.target.value)}
-              required
-            />
+            <div className="admin-password-input-wrap">
+              <input
+                id="admin-password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={event => setPassword(event.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="admin-password-visibility-toggle"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword(visible => !visible)}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
 
             {loginError && <p className="admin-login-error">{loginError}</p>}
 
