@@ -15,8 +15,8 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true
-      - key: ADMIN_EMAIL
-        value: admin@example.com
+      - key: ADMIN_USERNAME
+        value: admin001
       - key: ADMIN_PASSWORD_HASH
         value: $2a$12$replace_with_bcrypt_hash
       - key: EMAIL_USER

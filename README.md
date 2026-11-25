@@ -95,7 +95,7 @@ Required backend environment variables:
 
 - `DATABASE_URL`
 - `JWT_SECRET`
-- `ADMIN_EMAIL`
+- `ADMIN_USERNAME`
 - `ADMIN_PASSWORD_HASH`
 
 Activation emails use the Gmail API over HTTPS and do not require a custom domain or a Resend account.
@@ -127,7 +127,7 @@ The admin visit scanner uses the browser's native `BarcodeDetector` when availab
 
 ## Admin credentials
 
-Set `ADMIN_EMAIL` and `ADMIN_PASSWORD_HASH` in your environment. The password hash should be a bcrypt hash generated from the desired admin password.
+Set `ADMIN_USERNAME` and `ADMIN_PASSWORD_HASH` in your environment. The admin signs in with the username (default: `admin001`); existing deployments can temporarily keep using `ADMIN_EMAIL` as a legacy fallback. The password hash should be a bcrypt hash generated from the desired admin password.
 
 ## Customer activation flow
 

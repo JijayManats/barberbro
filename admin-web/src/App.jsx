@@ -338,7 +338,7 @@ function getCameraStartupError(error) {
 
 function App() {
   const [token, setToken] = useState(() => getAdminToken())
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loginLoading, setLoginLoading] = useState(false)
@@ -704,15 +704,15 @@ function App() {
     event.preventDefault()
     setLoginError('')
 
-    if (!email.trim() || !password) {
-      setLoginError('Please enter your admin email and password.')
+    if (!username.trim() || !password) {
+      setLoginError('Please enter your admin username and password.')
       return
     }
 
     setLoginLoading(true)
 
     try {
-      const result = await api.login(email.trim(), password)
+      const result = await api.login(username.trim(), password)
       if (!result?.token) {
         throw new Error('The server did not return an admin token.')
       }
@@ -1040,14 +1040,14 @@ function App() {
           </p>
 
           <form className="admin-login-form" onSubmit={handleLogin}>
-            <label htmlFor="admin-email">Email address</label>
+            <label htmlFor="admin-username">Admin username</label>
             <input
-              id="admin-email"
-              type="email"
+              id="admin-username"
+              type="text"
               autoComplete="username"
-              placeholder="admin@example.com"
-              value={email}
-              onChange={event => setEmail(event.target.value)}
+              placeholder="admin001"
+              value={username}
+              onChange={event => setUsername(event.target.value)}
               required
             />
 

@@ -26,47 +26,53 @@ function authenticateToken(req, res, next) {
   }
 }
 
-// Admin login using credentials stored in backend .env
+// Admin login using credentials stored in the environment.
 router.post("/admin/login", async (req, res) => {
   try {
+    const configuredAdminUsername = (
+      process.env.ADMIN_USERNAME || process.env.ADMIN_EMAIL || ""
+    ).trim().toLowerCase();
+
     if (!process.env.JWT_SECRET ||
-        !process.env.ADMIN_EMAIL ||
+        !configuredAdminUsername ||
         !process.env.ADMIN_PASSWORD_HASH) {
       return res.status(500).json({
         error: "Admin authentication is not configured",
       });
     }
 
-    const email =
-      typeof req.body.email === "string"
-        ? req.body.email.trim().toLowerCase()
-        : "";
+    const suppliedUsername =
+      typeof req.body.username === "string"
+        ? req.body.username
+        : typeof req.body.email === "string"
+          ? req.body.email
+          : "";
+    const username = suppliedUsername.trim().toLowerCase();
 
     const password =
       typeof req.body.password === "string"
         ? req.body.password
         : "";
 
-    if (!email || !password) {
+    if (!username || !password) {
       return res.status(400).json({
-        error: "Email and password are required",
+        error: "Username and password are required",
       });
     }
 
     const bcrypt = require("bcryptjs");
     const jwt = require("jsonwebtoken");
 
-    const emailMatches =
-      email === process.env.ADMIN_EMAIL.trim().toLowerCase();
+    const usernameMatches = username === configuredAdminUsername;
 
     const passwordMatches = await bcrypt.compare(
       password,
       process.env.ADMIN_PASSWORD_HASH
     );
 
-    if (!emailMatches || !passwordMatches) {
+    if (!usernameMatches || !passwordMatches) {
       return res.status(401).json({
-        error: "Invalid admin email or password",
+        error: "Invalid admin username or password",
       });
     }
 

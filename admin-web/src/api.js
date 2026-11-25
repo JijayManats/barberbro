@@ -135,10 +135,10 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
-  login: (email, password) =>
+  login: (username, password) =>
     request("/auth/admin/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     }),
 
   getDashboard: () => request("/dashboard"),
