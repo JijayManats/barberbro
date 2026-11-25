@@ -4,6 +4,8 @@ import { api, getAdminToken, saveAdminToken, clearAdminToken } from './api'
 import './App.css'
 
 const target = 10
+const emailDeliveryGuidance =
+  'Configure EMAIL_USER and the Google OAuth values GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN. Authorize the Gmail API with the gmail.send scope; this HTTPS method works on Render Free and needs no custom domain or Resend.'
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString('en-PH', {
@@ -757,7 +759,7 @@ function App() {
         setError(
           `The activation code was generated, but the email was NOT sent${result.email ? ` to ${result.email}` : ''}. ` +
           `${result.email_error || 'No email delivery details were returned.'} ` +
-          'Check Render EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, and EMAIL_FROM. For HTTPS delivery, configure RESEND_API_KEY and a verified EMAIL_FROM. The existing code remains active for 24 hours.'
+          `${emailDeliveryGuidance} The existing code remains active for 24 hours.`
         )
       }
     } catch (err) {
@@ -780,17 +782,17 @@ function App() {
         setError(
           `The email was not accepted for ${activationEmailRetryCustomer.email}. ` +
           `${result.email_error || 'Check the email provider configuration.'} ` +
-          'Check Render EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, and EMAIL_FROM, or configure RESEND_API_KEY with a verified sender.'
+          emailDeliveryGuidance
         )
         return
       }
 
-      setNotice(`Activation email accepted by the mail provider for ${result.email}.`)
+      setNotice(`Activation email accepted by the SMTP server for ${result.email}.`)
       setActivationEmailRetryCustomer(null)
     } catch (err) {
       setError(
         `${err.message || 'Failed to resend activation email.'} ` +
-        'Check Render EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, and EMAIL_FROM, or configure RESEND_API_KEY with a verified sender.'
+        emailDeliveryGuidance
       )
     } finally {
       setSaving(false)

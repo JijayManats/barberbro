@@ -19,15 +19,11 @@ services:
         value: admin@example.com
       - key: ADMIN_PASSWORD_HASH
         value: $2a$12$replace_with_bcrypt_hash
-      - key: EMAIL_HOST
-        value: smtp.gmail.com
-      - key: EMAIL_PORT
-        value: 587
       - key: EMAIL_USER
-        value: your-email@gmail.com
-      - key: EMAIL_PASS
-        value: your_app_password
-      - key: EMAIL_FROM
-        value: BarberBro <your-email@gmail.com>
-      - key: RESEND_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REFRESH_TOKEN
         sync: false

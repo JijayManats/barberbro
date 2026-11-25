@@ -57,25 +57,6 @@ function parseQrLookupPayload(rawPayload) {
   return { id: null, memberCode: trimmed.replace(/^member\//i, "").trim() };
 }
 
-function buildCustomerQrImageUrl(customer) {
-  const qrPayload = buildCustomerQrPayload(customer);
-  if (!qrPayload) {
-    return "";
-  }
-
-  return `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qrPayload)}&size=220x220&margin=1&ecc=M&color=171a2c&bgcolor=fffaf4`;
-}
-
-function getCustomerDisplayName(customer) {
-  const fullName = String(customer?.full_name || "").trim();
-  if (fullName) return fullName;
-
-  const emailName = String(customer?.email || "").split("@")[0]?.trim();
-  if (emailName) return emailName;
-
-  return "Member";
-}
-
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
     "&": "&amp;",
@@ -131,49 +112,45 @@ async function sendMemberCardEmail(customer, activationCode) {
     };
   }
 
-  const resendApiKey = process.env.RESEND_API_KEY;
-  const host = process.env.EMAIL_HOST;
-  const port = Number(process.env.EMAIL_PORT || 587);
   const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
-  const from = process.env.EMAIL_FROM || user || "BarberBro <noreply@barberbro.local>";
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 
-  const displayName = getCustomerDisplayName(customer);
-  const memberId = String(customer?.member_code || "").toUpperCase();
-
-  if (!resendApiKey && (!host || !user || !pass)) {
-    const preview = `Customer: ${displayName}
-Member ID: ${memberId}
-Activation code: ${activationCode}`;
-    console.log("[member-card-demo]", preview);
+  if (!user || !clientId || !clientSecret || !refreshToken) {
     return {
       sent: false,
-      reason: "email-provider-not-configured",
-      error: "Set RESEND_API_KEY for HTTPS email delivery, or configure the EMAIL_HOST, EMAIL_PORT, EMAIL_USER, and EMAIL_PASS SMTP settings.",
-      preview,
+      reason: "gmail-api-not-configured",
+      error: "Set EMAIL_USER, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN in the server environment.",
     };
   }
 
-  const nodemailer = require("nodemailer");
-  const safeDisplayName = escapeHtml(displayName);
+  const memberId = String(customer?.member_code || "").toUpperCase();
   const safeMemberId = escapeHtml(memberId);
   const safeActivationCode = escapeHtml(activationCode);
+  const recipient = String(customer.email).trim();
+  const from = String(user).trim();
+  const emailAddressPattern = /^[^\s@,<>]+@[^\s@,<>]+\.[^\s@,<>]+$/;
+
+  if (!emailAddressPattern.test(recipient) || !emailAddressPattern.test(from)) {
+    return {
+      sent: false,
+      reason: "invalid-email-header",
+      error: "The sender or recipient email address is invalid.",
+    };
+  }
 
   const html = `
     <!doctype html>
     <html>
       <body style="margin:0;padding:0;background:#f3f1ec;font-family:Arial,Helvetica,sans-serif;color:#20221d;">
-        <div style="display:none;max-height:0;overflow:hidden;">Your BarberBro membership setup details are inside.</div>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f1ec;padding:32px 12px;">
           <tr><td align="center">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e8e4da;border-radius:12px;overflow:hidden;">
               <tr><td style="padding:24px 28px;background:#20211c;color:#f4efe6;">
                 <div style="font-size:13px;font-weight:bold;letter-spacing:2px;">BARBER<span style="color:#d8b66a;">BRO</span></div>
-                <div style="margin-top:22px;font-size:25px;font-weight:bold;line-height:1.3;">Welcome, ${safeDisplayName}</div>
-                <div style="margin-top:7px;font-size:14px;line-height:1.6;color:#c5c0b5;">Your membership setup details are ready.</div>
               </td></tr>
               <tr><td style="padding:26px 28px 28px;">
-                <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#55564e;">Enter these details in the BarberBro app to activate your account.</p>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                   <tr><td style="padding:14px 16px;background:#f7f5f0;border:1px solid #e9e4d8;border-radius:8px;">
                     <div style="font-size:11px;font-weight:bold;letter-spacing:1.4px;color:#777267;">MEMBER ID</div>
@@ -185,10 +162,6 @@ Activation code: ${activationCode}`;
                     <div style="margin-top:7px;font-size:25px;font-weight:bold;letter-spacing:2px;color:#29251b;">${safeActivationCode}</div>
                   </td></tr>
                 </table>
-                <p style="margin:18px 0 0;font-size:13px;line-height:1.6;color:#66665d;">This activation code expires in 24 hours. For your security, don’t share it with anyone.</p>
-              </td></tr>
-              <tr><td style="padding:16px 28px;background:#f7f6f2;border-top:1px solid #ece9e1;font-size:12px;line-height:1.6;color:#77766e;">
-                If you weren’t expecting this email, you can ignore it.
               </td></tr>
             </table>
           </td></tr>
@@ -197,96 +170,77 @@ Activation code: ${activationCode}`;
     </html>
   `;
 
-  const text = `BARBERBRO MEMBERSHIP\n\nWelcome, ${displayName}!\n\nEnter these details in the BarberBro app to activate your account.\n\nMember ID: ${memberId}\nActivation code: ${activationCode}\n\nThis activation code expires in 24 hours. For your security, don't share it with anyone.\n\nIf you weren't expecting this email, you can ignore it.`;
+  const text = `Member ID: ${memberId}\nActivation code: ${activationCode}`;
 
-  if (resendApiKey) {
-    if (!process.env.EMAIL_FROM) {
-      return {
-        sent: false,
-        reason: "resend-sender-not-configured",
-        error: "Set EMAIL_FROM to a sender address verified by Resend.",
-      };
-    }
+  const boundary = `barberbro-${crypto.randomBytes(12).toString("hex")}`;
+  const encodeMimeBody = (value) =>
+    Buffer.from(value, "utf8")
+      .toString("base64")
+      .match(/.{1,76}/g)
+      .join("\r\n");
+  const mimeMessage = [
+    `From: ${from}`,
+    `To: ${recipient}`,
+    "Subject: Your BarberBro activation details",
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    encodeMimeBody(text),
+    `--${boundary}`,
+    "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    encodeMimeBody(html),
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
 
-    let response;
-    try {
-      response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from,
-          to: [customer.email],
-          subject: "Your BarberBro activation details",
-          text,
-          html,
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
-    } catch (error) {
-      const message = error.name === "TimeoutError"
-        ? "Resend email request timed out."
-        : error.message;
-      console.error("[member-card-email] Resend request failed:", message);
-      return { sent: false, reason: "resend-request-failed", error: message };
-    }
-
-    const responseText = await response.text();
-    let result = {};
-    if (responseText) {
-      try {
-        result = JSON.parse(responseText);
-      } catch {
-        result = { message: responseText };
-      }
-    }
-
-    if (!response.ok || !result.id) {
-      const message = result.message || `Resend rejected the email request (HTTP ${response.status}).`;
-      console.error("[member-card-email] Resend rejected the message:", message);
-      return { sent: false, reason: "resend-rejected", error: message };
-    }
-
-    console.info("[member-card-email] Resend accepted message:", result.id);
-    return { sent: true, message_id: result.id, provider: "resend" };
-  }
-
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    auth: { user, pass },
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 30000,
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+    signal: AbortSignal.timeout(15000),
   });
 
-  const delivery = await transporter.sendMail({
-    from,
-    to: customer.email,
-    subject: "Your BarberBro activation details",
-    text,
-    html,
-  });
-
-  const acceptedRecipients = Array.isArray(delivery.accepted)
-    ? delivery.accepted.map((recipient) => String(recipient).toLowerCase())
-    : [];
-  const sent = acceptedRecipients.includes(String(customer.email).toLowerCase());
-
-  if (!sent) {
-    console.warn("[member-card-email] Recipient was not accepted by the SMTP server:", customer.email);
-    return {
-      sent: false,
-      reason: "recipient-rejected",
-      error: "The mail server did not accept the recipient address.",
-    };
+  const tokenData = await tokenResponse.json().catch(() => ({}));
+  if (!tokenResponse.ok || !tokenData.access_token) {
+    const detail = tokenData.error_description || tokenData.error;
+    throw new Error(
+      `Google OAuth token request failed${detail ? `: ${detail}` : "."}`
+    );
   }
 
-  console.info("[member-card-email] Message accepted by SMTP server:", customer.email);
-  return { sent: true, message_id: delivery.messageId };
+  const gmailResponse = await fetch(
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ raw: Buffer.from(mimeMessage).toString("base64url") }),
+      signal: AbortSignal.timeout(15000),
+    }
+  );
+  const gmailData = await gmailResponse.json().catch(() => ({}));
+  if (!gmailResponse.ok || !gmailData.id) {
+    const detail = gmailData.error?.message;
+    throw new Error(
+      `Gmail API send failed${detail ? `: ${detail}` : ` (HTTP ${gmailResponse.status}).`}`
+    );
+  }
+
+  console.info("[member-card-email] Message accepted by Gmail API:", recipient);
+  return { sent: true, message_id: gmailData.id };
 }
 
 router.get("/barbers", async (req, res) => {
@@ -669,7 +623,7 @@ router.post("/customers/:id/activation-code", async (req, res) => {
     } catch (emailError) {
       emailResult = {
         sent: false,
-        reason: "smtp-error",
+        reason: "email-send-failed",
         error: emailError.message,
       };
       console.warn("Customer card email failed:", emailError.message);
@@ -758,7 +712,7 @@ router.post("/customers/:id/activation-code/resend", async (req, res) => {
 
     return res.json({
       message: emailResult.sent
-        ? "Activation email accepted by the mail provider."
+        ? "Activation email accepted by Gmail."
         : "Activation email could not be sent.",
       email: customer.email,
       email_sent: emailResult.sent,

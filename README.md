@@ -96,7 +96,7 @@ Required backend environment variables:
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD_HASH`
 
-Email delivery requires either the Resend settings or the SMTP settings below.
+Activation emails use the Gmail API over HTTPS and do not require a custom domain or a Resend account.
 
 Render will provide the `PORT` automatically; do not hardcode it unless you are explicitly using a custom setup.
 
@@ -104,18 +104,16 @@ The repository also includes a `render.yaml` file that can be used with Render B
 
 ### Fixing activation-code email delivery on Render
 
-The customer activation code is sent by the backend. An SMTP connection timeout means the backend could not reach the SMTP server; it is not evidence that the activation code itself is invalid. Resend is also supported on Render because it sends over HTTPS.
+The activation email contains only the member ID and activation code, with no QR code. It is sent through Gmail's HTTPS API, so Render Free's SMTP restrictions do not apply. No custom domain, Gmail App Password, or Resend account is needed.
 
-1. Create a Resend account and verify a sending domain.
-2. Create a Resend API key.
-3. In Render, open the BarberBro web service, then **Environment**.
-4. Add `RESEND_API_KEY` with the key value and `EMAIL_FROM` with a sender on the verified domain, such as `BarberBro <noreply@your-verified-domain.com>`.
-5. Save the changes and wait for Render to redeploy. Do not share the API key in chat or commit it to the repository.
-6. Retry the activation email in the admin portal, or generate a code for a customer who has not yet been sent one. Check Render logs for a Resend accepted/rejected result.
+1. In [Google Cloud Console](https://console.cloud.google.com/), create/select a project and enable the Gmail API.
+2. Set up Google Auth Platform's consent screen. For an external app in **Testing** status, add the Gmail sender account as a test user.
+3. Create an OAuth client ID of type **Web application** and add `https://developers.google.com/oauthplayground` as an authorized redirect URI.
+4. Open [OAuth 2.0 Playground](https://developers.google.com/oauthplayground). In its settings, enable **Use your own OAuth credentials**, enter that client ID and secret, and use offline access with the consent prompt.
+5. In Step 1, enter `https://www.googleapis.com/auth/gmail.send`, authorize with the sender Gmail account, then exchange the authorization code in Step 2. Copy the refresh token. Keep the token and client secret private.
+6. In Render, set `EMAIL_USER` to the authorized sender Gmail address, and set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN`. Save and redeploy.
 
-When `RESEND_API_KEY` is present, the backend uses Resend for activation-code email. If you prefer SMTP, configure `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, and `EMAIL_FROM` in Render. For Gmail, use `smtp.gmail.com`, port `587`, your Gmail address, and a Google App Password (not your normal account password); first enable 2-Step Verification and create the App Password in your Google Account. `EMAIL_FROM` should be an allowed sender for that SMTP account. A timeout can also indicate the SMTP host or port is unreachable from the hosting service, so use Resend if the SMTP connection continues to time out.
-
-The admin portal reports whether the mail provider accepted the recipient; acceptance does not guarantee inbox placement, so check spam/quarantine if accepted mail is missing.
+The Gmail account authorizing the refresh token must match `EMAIL_USER`. Never commit these values or send them in chat. Google refresh tokens for external apps left in **Testing** expire after 7 days for Gmail scopes; for ongoing delivery, review Google's [OAuth publishing and verification requirements](https://support.google.com/cloud/answer/10311615?hl=en). Tokens can also be revoked or expire for other reasons, in which case generate a replacement. The admin portal can retry the existing activation code after delivery is configured. Gmail accepting the API request does not guarantee inbox placement, so check spam if the recipient doesn't see it.
 
 The admin portal refreshes shared records every 10 seconds while open. The customer app refreshes membership and visit history every 10 seconds and the active barber list every 30 seconds; both refresh sooner when brought back to the foreground.
 
