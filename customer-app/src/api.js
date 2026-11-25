@@ -1,18 +1,28 @@
 
+import { Capacitor } from '@capacitor/core'
+
+const DEFAULT_API_URL = 'https://barberbro-1.onrender.com/api'
+
 function resolveApiUrl() {
+  const configuredApiUrl = import.meta.env.VITE_API_URL
+
+  if (Capacitor.isNativePlatform()) {
+    return configuredApiUrl || DEFAULT_API_URL
+  }
+
+  if (configuredApiUrl) {
+    return configuredApiUrl
+  }
+
   if (typeof window !== 'undefined') {
     const host = window.location.hostname || ''
 
     if (host.includes('localhost') || host.includes('127.0.0.1')) {
       return 'http://localhost:5000/api'
     }
-
-    if (host.includes('onrender.com') || host.includes('render.com')) {
-      return 'https://barberbro-1.onrender.com/api'
-    }
   }
 
-  return import.meta.env.VITE_API_URL || 'https://barberbro-1.onrender.com/api'
+  return DEFAULT_API_URL
 }
 
 const API_URL = resolveApiUrl()
