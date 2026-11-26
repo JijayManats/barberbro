@@ -521,6 +521,7 @@ router.get("/reward-templates/admin", async (req, res) => {
     const result = await pool.query(
       `SELECT id, name, required_stamps, description, is_active, created_at
        FROM reward_templates
+       WHERE is_active = TRUE
        ORDER BY required_stamps ASC, name ASC`
     );
 
