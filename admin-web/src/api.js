@@ -187,6 +187,12 @@ export const api = {
       body: JSON.stringify(style),
     }),
 
+  updateHaircutStyle: (styleId, style) =>
+    request(`/haircut-styles/${styleId}`, {
+      method: "PUT",
+      body: JSON.stringify(style),
+    }),
+
   deleteHaircutStyle: (styleId) =>
     request(`/haircut-styles/${styleId}`, {
       method: "DELETE",

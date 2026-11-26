@@ -279,7 +279,8 @@ router.get("/reward-templates", async (req, res) => {
 router.get("/haircut-styles", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, image_data, created_at
+      `SELECT id, name, image_data, created_at,
+              (catalog_key IS NOT NULL) AS is_default
        FROM haircut_styles
        ORDER BY name ASC`
     );
@@ -343,6 +344,63 @@ router.post("/haircut-styles", async (req, res) => {
   }
 });
 
+router.put("/haircut-styles/:id", async (req, res) => {
+  try {
+    const styleId = Number(req.params.id);
+    const name = String(req.body?.name || "").trim();
+    const imageData = String(req.body?.image_data || "");
+
+    if (!Number.isInteger(styleId) || styleId <= 0) {
+      return res.status(400).json({ error: "Invalid hairstyle ID" });
+    }
+    if (!name || name.length > 120) {
+      return res.status(400).json({ error: "Hairstyle name must be between 1 and 120 characters" });
+    }
+
+    if (imageData) {
+      const match = imageData.match(
+        /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/
+      );
+      if (!match) {
+        return res.status(400).json({ error: "Choose a valid JPEG, PNG, or WebP reference image" });
+      }
+
+      const imageBytes = Buffer.from(match[2], "base64");
+      const validImageSignature = match[1] === "image/png"
+        ? imageBytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        : match[1] === "image/jpeg"
+          ? imageBytes[0] === 255 && imageBytes[1] === 216 && imageBytes[2] === 255
+          : imageBytes.subarray(0, 4).toString() === "RIFF" &&
+            imageBytes.subarray(8, 12).toString() === "WEBP";
+
+      if (!validImageSignature || imageBytes.length === 0 || imageBytes.length > 1.5 * 1024 * 1024) {
+        return res.status(400).json({ error: "Reference images must be valid and no larger than 1.5 MB" });
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE haircut_styles
+       SET name = $1, image_data = COALESCE(NULLIF($2, ''), image_data)
+       WHERE id = $3
+       RETURNING id, name, image_data, created_at,
+                 (catalog_key IS NOT NULL) AS is_default`,
+      [name, imageData, styleId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Hairstyle not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({ error: "A hairstyle with that name already exists" });
+    }
+    console.error("Haircut style update failed:", error.message);
+    res.status(500).json({ error: "Failed to update hairstyle" });
+  }
+});
+
 router.delete("/haircut-styles/:id", async (req, res) => {
   try {
     const styleId = Number(req.params.id);
@@ -351,12 +409,19 @@ router.delete("/haircut-styles/:id", async (req, res) => {
     }
 
     const result = await pool.query(
-      "DELETE FROM haircut_styles WHERE id = $1 RETURNING id",
+      "DELETE FROM haircut_styles WHERE id = $1 AND catalog_key IS NULL RETURNING id",
       [styleId]
     );
 
     if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Hairstyle not found" });
+      const existing = await pool.query(
+        "SELECT catalog_key FROM haircut_styles WHERE id = $1",
+        [styleId]
+      );
+      if (existing.rowCount === 0) {
+        return res.status(404).json({ error: "Hairstyle not found" });
+      }
+      return res.status(409).json({ error: "Built-in hairstyles cannot be deleted. Edit the style instead." });
     }
 
     res.json({ message: "Hairstyle removed successfully", hairstyle_id: styleId });

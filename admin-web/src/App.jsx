@@ -453,6 +453,7 @@ function App() {
   const [rewardModalOpen, setRewardModalOpen] = useState(false)
   const [haircutStyles, setHaircutStyles] = useState([])
   const [haircutForm, setHaircutForm] = useState({ name: '', image_data: '' })
+  const [editingHaircutStyleId, setEditingHaircutStyleId] = useState(null)
   const [haircutModalOpen, setHaircutModalOpen] = useState(false)
   const dataRefreshInFlightRef = useRef(null)
 
@@ -1091,8 +1092,12 @@ function App() {
     }
   }
 
-  function openHaircutModal() {
-    setHaircutForm({ name: '', image_data: '' })
+  function openHaircutModal(style = null) {
+    setEditingHaircutStyleId(style?.id ?? null)
+    setHaircutForm({
+      name: style?.name || '',
+      image_data: style?.image_data || '',
+    })
     setError('')
     setHaircutModalOpen(true)
   }
@@ -1116,7 +1121,7 @@ function App() {
     if (saving) return
 
     const name = haircutForm.name.trim()
-    if (!name || !haircutForm.image_data) {
+    if (!name || (!editingHaircutStyleId && !haircutForm.image_data)) {
       setError('Enter a hairstyle name and select a reference image.')
       return
     }
@@ -1125,10 +1130,20 @@ function App() {
     setError('')
     setNotice('')
     try {
-      await api.addHaircutStyle({ name, image_data: haircutForm.image_data })
+      if (editingHaircutStyleId) {
+        await api.updateHaircutStyle(editingHaircutStyleId, {
+          name,
+          image_data: haircutForm.image_data,
+        })
+        setNotice(`${name} has been updated in the hairstyle catalog.`)
+      } else {
+        await api.addHaircutStyle({ name, image_data: haircutForm.image_data })
+        setNotice(`${name} has been added to the hairstyle catalog.`)
+      }
+
       setHaircutModalOpen(false)
+      setEditingHaircutStyleId(null)
       setHaircutForm({ name: '', image_data: '' })
-      setNotice(`${name} has been added to the hairstyle catalog.`)
       await loadData()
     } catch (err) {
       setError(err.message || 'Failed to add hairstyle.')
@@ -1486,7 +1501,7 @@ function App() {
             <div className="admin-panel-heading">
               <div>
                 <h2>Hairstyle Reference Catalog</h2>
-                <p>Add styles and reference images for customers to choose when creating a visit ticket.</p>
+                <p>Edit the built-in hairstyles or add reference images for customers to choose when creating a visit ticket.</p>
               </div>
               <button className="admin-primary" onClick={openHaircutModal}>＋ Add Hairstyle</button>
             </div>
@@ -1498,19 +1513,31 @@ function App() {
                     <img src={style.image_data} alt={`${style.name} hairstyle reference`} />
                     <div className="admin-hairstyle-card-footer">
                       <strong>{style.name}</strong>
-                      <button
-                        className="admin-action-button admin-delete-button"
-                        disabled={saving}
-                        onClick={() => removeHaircutStyle(style)}
-                      >
-                        Delete
-                      </button>
+                      <div className="admin-action-stack">
+                        {style.is_default && <span className="admin-tag active-tag">Built-in</span>}
+                        <button
+                          className="admin-action-button"
+                          disabled={saving}
+                          onClick={() => openHaircutModal(style)}
+                        >
+                          Edit
+                        </button>
+                        {!style.is_default && (
+                          <button
+                            className="admin-action-button admin-delete-button"
+                            disabled={saving}
+                            onClick={() => removeHaircutStyle(style)}
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </article>
                 ))}
               </div>
             ) : (
-              <p className="admin-empty">No custom hairstyles yet. Add one to make it available in the customer app.</p>
+              <p className="admin-empty">The hairstyle catalog is loading or empty. Add a style to make it available in the customer app.</p>
             )}
           </section>
         )}
@@ -1672,7 +1699,7 @@ function App() {
           <form className="admin-modal" onSubmit={saveHaircutStyle} onClick={(event) => event.stopPropagation()}>
             <button type="button" className="admin-modal-close" disabled={saving} onClick={() => setHaircutModalOpen(false)}>×</button>
             <p className="admin-eyebrow">CUSTOMER VISIT CATALOG</p>
-            <h2>Add Hairstyle</h2>
+            <h2>{editingHaircutStyleId ? 'Edit Hairstyle' : 'Add Hairstyle'}</h2>
             <label>Hairstyle name
               <input
                 required
@@ -1682,10 +1709,13 @@ function App() {
                 placeholder="e.g. Burst Fade"
               />
             </label>
-            <label>Reference image
+            <label>{editingHaircutStyleId ? 'Replace reference image (optional)' : 'Reference image'}
               <input type="file" accept="image/*" onChange={handleHaircutImageChange} />
             </label>
-            <p className="admin-hairstyle-image-help">Images are resized before saving. Maximum saved size: 1.5 MB.</p>
+            <p className="admin-hairstyle-image-help">
+              {editingHaircutStyleId ? 'Keep the current image or choose a replacement. ' : ''}
+              Images are resized before saving. Maximum saved size: 1.5 MB.
+            </p>
             {haircutForm.image_data && (
               <img
                 className="admin-hairstyle-preview"
@@ -1694,7 +1724,7 @@ function App() {
               />
             )}
             <button className="admin-primary admin-confirm" type="submit" disabled={saving || !haircutForm.image_data}>
-              {saving ? 'Saving...' : 'Save Hairstyle'}
+              {saving ? 'Saving...' : editingHaircutStyleId ? 'Save Changes' : 'Save Hairstyle'}
             </button>
           </form>
         </div>

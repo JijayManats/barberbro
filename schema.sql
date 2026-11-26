@@ -33,8 +33,16 @@ CREATE TABLE IF NOT EXISTS haircut_styles (
     id SERIAL PRIMARY KEY,
     name VARCHAR(120) NOT NULL UNIQUE,
     image_data TEXT NOT NULL,
+    catalog_key VARCHAR(60),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE haircut_styles
+    ADD COLUMN IF NOT EXISTS catalog_key VARCHAR(60);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_haircut_styles_catalog_key
+    ON haircut_styles(catalog_key)
+    WHERE catalog_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS visits (
     id SERIAL PRIMARY KEY,

@@ -14,9 +14,53 @@ const { publishDataUpdate } = require("./realtime");
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 
+const defaultHaircutStyles = [
+  ["buzz-cut", "Buzz Cut", "buzz-cut.jpg"],
+  ["crew-cut", "Crew Cut", "crew-cut.jpg"],
+  ["low-fade", "Low Fade", "low-fade.jpg"],
+  ["high-fade", "High Fade", "high-fade.jpg"],
+  ["taper-cut", "Taper Cut", "taper-cut.jpg"],
+  ["undercut", "Undercut", "undercut.jpg"],
+  ["pompadour", "Pompadour", "pompadour.jpg"],
+  ["side-part", "Side Part", "side-part.jpg"],
+  ["textured-crop", "Textured Crop", "textured-crop.jpg"],
+  ["slick-back", "Slick Back", "slick-back.jpg"],
+  ["spiky-top", "Spiky Top", "spiky-top.jpg"],
+  ["curly-top", "Curly Top", "curly-top.jpg"],
+  ["medium-flow", "Medium Flow", "medium-flow.jpg"],
+];
+
+async function seedDefaultHaircutStyles() {
+  for (const [catalogKey, name, filename] of defaultHaircutStyles) {
+    const imagePath = path.join(
+      __dirname,
+      "customer-app",
+      "src",
+      "assets",
+      "haircuts",
+      filename
+    );
+    const imageData = `data:image/jpeg;base64,${fs.readFileSync(imagePath).toString("base64")}`;
+
+    await pool.query(
+      `UPDATE haircut_styles
+       SET catalog_key = $1
+       WHERE name = $2 AND catalog_key IS NULL`,
+      [catalogKey, name]
+    );
+    await pool.query(
+      `INSERT INTO haircut_styles (catalog_key, name, image_data)
+       VALUES ($1, $2, $3)
+       ON CONFLICT DO NOTHING`,
+      [catalogKey, name, imageData]
+    );
+  }
+}
+
 async function initializeDatabase() {
   const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
   await pool.query(schema);
+  await seedDefaultHaircutStyles();
   console.log("Database schema ready.");
 }
 

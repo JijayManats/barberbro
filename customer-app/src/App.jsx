@@ -521,20 +521,26 @@ function App() {
   const nextReward = rewardTemplates.find(
     (reward) => stamps < Number(reward.required_stamps)
   ) || rewardTemplates[0]
-  const availableVisitServices = [
-    ...visitServices,
-    ...haircutStyles.map((style) => ({
-      code: `custom-${style.id}`,
-      name: style.name,
-      image: style.image_data,
-    })),
-  ]
+  const availableVisitServices = haircutStyles.length > 0
+    ? haircutStyles.map((style) => {
+        const bundledStyle = visitServices.find(
+          (service) => service.name.toLowerCase() === style.name.toLowerCase()
+        )
+
+        return {
+          code: `custom-${style.id}`,
+          legacyCode: bundledStyle?.code,
+          name: style.name,
+          image: style.image_data,
+        }
+      })
+    : visitServices
   const selectedVisitBarber = barbers.find((item) => item.name === visitBarber)
   const selectedVisitService = availableVisitServices.find((service) => service.code === visitService)
   const orderedVisitServices = [...availableVisitServices].sort(
     (first, second) =>
-      Number(favoriteHaircutCodes.includes(second.code)) -
-      Number(favoriteHaircutCodes.includes(first.code))
+      Number(favoriteHaircutCodes.includes(second.code) || favoriteHaircutCodes.includes(second.legacyCode)) -
+      Number(favoriteHaircutCodes.includes(first.code) || favoriteHaircutCodes.includes(first.legacyCode))
   )
   const visitQrValue = customer && selectedVisitBarber
     ? [
@@ -564,10 +570,13 @@ function App() {
     setGeneratedVisitQr(visitQrValue)
   }
 
-  function toggleFavoriteHaircut(code) {
-    const nextFavorites = favoriteHaircutCodes.includes(code)
-      ? favoriteHaircutCodes.filter((favoriteCode) => favoriteCode !== code)
-      : [...favoriteHaircutCodes, code]
+  function toggleFavoriteHaircut(service) {
+    const serviceKeys = [service.code, service.legacyCode].filter(Boolean)
+    const isFavorite = serviceKeys.some((code) => favoriteHaircutCodes.includes(code))
+    const withoutService = favoriteHaircutCodes.filter((code) => !serviceKeys.includes(code))
+    const nextFavorites = isFavorite
+      ? withoutService
+      : [...withoutService, service.code]
 
     try {
       localStorage.setItem(favoriteHaircutsStorageKey, JSON.stringify(nextFavorites))
@@ -1129,7 +1138,8 @@ function App() {
                       <div className="haircut-options" id="haircut-options" role="group" aria-label="Haircut styles">
                         {orderedVisitServices.map((service) => {
                           const isSelected = visitService === service.code
-                          const isFavorite = favoriteHaircutCodes.includes(service.code)
+                          const isFavorite = favoriteHaircutCodes.includes(service.code) ||
+                            favoriteHaircutCodes.includes(service.legacyCode)
 
                           return (
                             <article className={`haircut-option${isSelected ? ' is-selected' : ''}`} key={service.code}>
@@ -1151,7 +1161,7 @@ function App() {
                                 type="button"
                                 aria-label={`${isFavorite ? 'Remove' : 'Add'} ${service.name} ${isFavorite ? 'from' : 'to'} favorites`}
                                 aria-pressed={isFavorite}
-                                onClick={() => toggleFavoriteHaircut(service.code)}
+                                onClick={() => toggleFavoriteHaircut(service)}
                               >
                                 {isFavorite ? '★' : '☆'}
                               </button>
