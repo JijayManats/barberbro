@@ -276,12 +276,95 @@ router.get("/reward-templates", async (req, res) => {
   }
 });
 
+router.get("/haircut-styles", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, image_data, created_at
+       FROM haircut_styles
+       ORDER BY name ASC`
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Haircut style load failed:", error.message);
+    res.status(500).json({ error: "Failed to load haircut styles" });
+  }
+});
+
 router.get("/events", authenticateToken, (req, res) => {
   addRealtimeClient(req, res);
 });
 
 // The remaining routes in this file require an authenticated admin.
 router.use(authenticateToken, requireAdmin);
+
+router.post("/haircut-styles", async (req, res) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const imageData = String(req.body?.image_data || "");
+    const match = imageData.match(
+      /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/
+    );
+
+    if (!name || name.length > 120) {
+      return res.status(400).json({ error: "Hairstyle name must be between 1 and 120 characters" });
+    }
+
+    if (!match) {
+      return res.status(400).json({ error: "Choose a valid JPEG, PNG, or WebP reference image" });
+    }
+
+    const imageBytes = Buffer.from(match[2], "base64");
+    const validImageSignature = match[1] === "image/png"
+      ? imageBytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+      : match[1] === "image/jpeg"
+        ? imageBytes[0] === 255 && imageBytes[1] === 216 && imageBytes[2] === 255
+        : imageBytes.subarray(0, 4).toString() === "RIFF" &&
+          imageBytes.subarray(8, 12).toString() === "WEBP";
+
+    if (!validImageSignature || imageBytes.length === 0 || imageBytes.length > 1.5 * 1024 * 1024) {
+      return res.status(400).json({ error: "Reference images must be valid and no larger than 1.5 MB" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO haircut_styles (name, image_data)
+       VALUES ($1, $2)
+       RETURNING id, name, image_data, created_at`,
+      [name, imageData]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({ error: "A hairstyle with that name already exists" });
+    }
+    console.error("Haircut style create failed:", error.message);
+    res.status(500).json({ error: "Failed to add hairstyle" });
+  }
+});
+
+router.delete("/haircut-styles/:id", async (req, res) => {
+  try {
+    const styleId = Number(req.params.id);
+    if (!Number.isInteger(styleId) || styleId <= 0) {
+      return res.status(400).json({ error: "Invalid hairstyle ID" });
+    }
+
+    const result = await pool.query(
+      "DELETE FROM haircut_styles WHERE id = $1 RETURNING id",
+      [styleId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Hairstyle not found" });
+    }
+
+    res.json({ message: "Hairstyle removed successfully", hairstyle_id: styleId });
+  } catch (error) {
+    console.error("Haircut style delete failed:", error.message);
+    res.status(500).json({ error: "Failed to delete hairstyle" });
+  }
+});
 
 // Get dashboard statistics
 router.get("/dashboard", async (req, res) => {

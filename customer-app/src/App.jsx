@@ -49,7 +49,10 @@ function getFavoriteHaircutCodes() {
       localStorage.getItem(favoriteHaircutsStorageKey) || '[]'
     )
     return Array.isArray(savedFavorites)
-      ? savedFavorites.filter((code) => visitServices.some((service) => service.code === code))
+      ? savedFavorites.filter((code) =>
+          visitServices.some((service) => service.code === code) ||
+          /^custom-\d+$/.test(code)
+        )
       : []
   } catch {
     return []
@@ -140,6 +143,8 @@ function App() {
   const [rewardTemplates, setRewardTemplates] = useState([])
   const [rewardHistory, setRewardHistory] = useState([])
   const [barbers, setBarbers] = useState([])
+  const [haircutStyles, setHaircutStyles] = useState([])
+  const [haircutStylesError, setHaircutStylesError] = useState('')
   const [dataLoading, setDataLoading] = useState(false)
   const [dataError, setDataError] = useState('')
   const [rewardNotice, setRewardNotice] = useState('')
@@ -254,6 +259,44 @@ function App() {
       document.removeEventListener('visibilitychange', refreshWhenVisible)
       window.removeEventListener('focus', refreshWhenVisible)
       active = false
+    }
+  }, [refreshKey])
+
+  useEffect(() => {
+    let active = true
+    let requestInFlight = false
+
+    async function loadHaircutStyles() {
+      if (requestInFlight) return
+      requestInFlight = true
+      try {
+        const response = await fetch(`${API_URL}/haircut-styles`, { cache: 'no-store' })
+        if (!response.ok) throw new Error('Unable to load additional hairstyles')
+        const rows = await response.json()
+        if (!active) return
+        setHaircutStyles(Array.isArray(rows) ? rows : [])
+        setHaircutStylesError('')
+      } catch {
+        if (active) setHaircutStylesError('Unable to load custom hairstyle references. Check your connection and retry.')
+      } finally {
+        requestInFlight = false
+      }
+    }
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') loadHaircutStyles()
+    }
+
+    loadHaircutStyles()
+    const refreshTimer = window.setInterval(refreshWhenVisible, 30000)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    window.addEventListener('focus', refreshWhenVisible)
+
+    return () => {
+      active = false
+      window.clearInterval(refreshTimer)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      window.removeEventListener('focus', refreshWhenVisible)
     }
   }, [refreshKey])
 
@@ -478,18 +521,28 @@ function App() {
   const nextReward = rewardTemplates.find(
     (reward) => stamps < Number(reward.required_stamps)
   ) || rewardTemplates[0]
+  const availableVisitServices = [
+    ...visitServices,
+    ...haircutStyles.map((style) => ({
+      code: `custom-${style.id}`,
+      name: style.name,
+      image: style.image_data,
+    })),
+  ]
   const selectedVisitBarber = barbers.find((item) => item.name === visitBarber)
-  const selectedVisitService = visitServices.find((service) => service.code === visitService)
-  const orderedVisitServices = [...visitServices].sort(
+  const selectedVisitService = availableVisitServices.find((service) => service.code === visitService)
+  const orderedVisitServices = [...availableVisitServices].sort(
     (first, second) =>
       Number(favoriteHaircutCodes.includes(second.code)) -
       Number(favoriteHaircutCodes.includes(first.code))
   )
   const visitQrValue = customer && selectedVisitBarber
     ? [
-        'BBV3',
+        visitService.startsWith('custom-') ? 'BBV4' : 'BBV3',
         customer.id,
-        visitService,
+        visitService.startsWith('custom-')
+          ? encodeURIComponent(selectedVisitService?.name || '')
+          : visitService,
         selectedVisitBarber.id,
         String(Number(visitAmount) || 0),
       ].join('|')
@@ -497,6 +550,12 @@ function App() {
 
   function generateVisitQr(event) {
     event.preventDefault()
+    if (!selectedVisitService) {
+      setGeneratedVisitQr('')
+      setBarberError('Choose an available hairstyle before generating a visit ticket.')
+      return
+    }
+
     if (!selectedVisitBarber?.id) {
       setBarberError('No active barber is available. Try again after the barber list refreshes.')
       return
@@ -867,14 +926,15 @@ function App() {
         </header>
 
         <div className="page-content">
-          {(dataError || barberError) && (
+          {(dataError || barberError || haircutStylesError) && (
             <div className="form-error" role="alert">
-              {dataError || barberError}
+              {dataError || barberError || haircutStylesError}
               <button
                 className="text-button"
                 onClick={() => {
                   setDataError('')
                   setBarberError('')
+                  setHaircutStylesError('')
                   setRefreshKey((current) => current + 1)
                 }}
               >
@@ -1135,15 +1195,15 @@ function App() {
                       />
                     </label>
                   </div>
-                  {(!visitService || !selectedVisitBarber?.id) && (
+                  {(!selectedVisitService || !selectedVisitBarber?.id) && (
                     <p className="visit-ticket-form-hint">
-                      {!visitService ? 'Choose a haircut to continue.' : 'Choose a barber to continue.'}
+                      {!selectedVisitService ? 'Choose a haircut to continue.' : 'Choose a barber to continue.'}
                     </p>
                   )}
                   <button
                     className="gold-button visit-ticket-submit"
                     type="submit"
-                    disabled={!visitService || !selectedVisitBarber?.id}
+                    disabled={!selectedVisitService || !selectedVisitBarber?.id}
                   >
                     Generate visit QR <span>→</span>
                   </button>

@@ -179,6 +179,19 @@ export const api = {
 
   getRewardRedemptions: () => request("/reward-redemptions"),
 
+  getHaircutStyles: () => request("/haircut-styles"),
+
+  addHaircutStyle: (style) =>
+    request("/haircut-styles", {
+      method: "POST",
+      body: JSON.stringify(style),
+    }),
+
+  deleteHaircutStyle: (styleId) =>
+    request(`/haircut-styles/${styleId}`, {
+      method: "DELETE",
+    }),
+
   addRewardTemplate: (reward) =>
     request("/reward-templates", {
       method: "POST",

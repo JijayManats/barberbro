@@ -3,6 +3,7 @@
 BarberBro is a full-stack barbershop membership system with:
 
 - Admin dashboard for managing customers, visits, and rewards
+- Admin-managed hairstyle catalog with reference image uploads for customer visit tickets
 - Barber performance statistics for haircut counts, gross visit sales, popular styles, and repeat customers
 - Customer portal for loyalty tracking and account access
 - Authenticated live updates across the admin portal and customer app
@@ -121,7 +122,9 @@ The activation email contains only the member ID and activation code, with no QR
 
 The Gmail account authorizing the refresh token must match `EMAIL_USER`. Never commit these values or send them in chat. Google refresh tokens for external apps left in **Testing** expire after 7 days for Gmail scopes; for ongoing delivery, review Google's [OAuth publishing and verification requirements](https://support.google.com/cloud/answer/10311615?hl=en). Tokens can also be revoked or expire for other reasons, in which case generate a replacement. The admin portal can retry the existing activation code after delivery is configured. Gmail accepting the API request does not guarantee inbox placement, so check spam if the recipient doesn't see it.
 
-The admin portal refreshes shared records every 10 seconds while open. The customer app refreshes membership and visit history every 10 seconds and the active barber list every 30 seconds; both refresh sooner when brought back to the foreground.
+The admin portal refreshes shared records every 10 seconds while open. The customer app refreshes membership and visit history every 10 seconds and the active barber and hairstyle catalogs every 30 seconds; both refresh sooner when brought back to the foreground.
+
+Admins can add custom hairstyles and reference images from **Haircut Styles**. Images are resized in the browser and stored with the hairstyle in PostgreSQL; custom styles appear in the customer visit picker and can be removed from the same admin page. Customer visit tickets include custom style names so the admin scanner records the correct service.
 
 The admin visit scanner uses the browser's native `BarcodeDetector` when available, with ZXing and jsQR as decoder fallbacks. Image scanning tries upscaled, cropped, and light/dark padded versions of an uploaded image to recover older QR tickets without a quiet zone. New customer visit QR codes are generated as conventional black-on-white PNG canvas codes with a four-module quiet zone and medium error correction. The admin scanner defaults to the rear camera on mobile and can switch between front and rear cameras. The deployed admin page must use HTTPS for camera access.
 

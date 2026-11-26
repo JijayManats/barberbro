@@ -186,6 +186,45 @@ async function decodeQrImage(file) {
   }
 }
 
+async function prepareHaircutImage(file) {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Choose an image file for the hairstyle reference.')
+  }
+  if (file.size > 15 * 1024 * 1024) {
+    throw new Error('The selected image is too large. Choose an image under 15 MB.')
+  }
+
+  const bitmap = await createImageBitmap(file)
+  try {
+    for (const maxDimension of [1280, 1024, 800]) {
+      const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('This browser cannot process the selected image.')
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+
+      for (const quality of [0.82, 0.68, 0.55]) {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', quality))
+        if (!blob) throw new Error('The selected image could not be processed.')
+        if (blob.size > 1.5 * 1024 * 1024) continue
+
+        return await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result)
+          reader.onerror = () => reject(new Error('The selected image could not be read.'))
+          reader.readAsDataURL(blob)
+        })
+      }
+    }
+
+    throw new Error('The image could not be reduced below 1.5 MB. Choose a smaller image.')
+  } finally {
+    bitmap.close()
+  }
+}
+
 function parseVisitQrPayload(rawPayload, barberRows = []) {
   const trimmedPayload = String(rawPayload || '').trim()
 
@@ -194,6 +233,31 @@ function parseVisitQrPayload(rawPayload, barberRows = []) {
   }
 
   const compactFields = trimmedPayload.split('|')
+  if (compactFields.length === 5 && compactFields[0] === 'BBV4') {
+    try {
+      const customerId = Number(compactFields[1])
+      const service = decodeURIComponent(compactFields[2]).trim()
+      const barberId = compactFields[3]
+      const selectedBarber = barberRows.find((barber) => String(barber.id) === barberId)
+      const amount = Number(compactFields[4])
+
+      if (!Number.isInteger(customerId) || customerId <= 0 ||
+          !service || !selectedBarber?.name ||
+          compactFields[4].trim() === '' || !Number.isFinite(amount) || amount < 0) {
+        return null
+      }
+
+      return {
+        customer_id: customerId,
+        service,
+        barber_name: selectedBarber.name,
+        amount,
+      }
+    } catch {
+      return null
+    }
+  }
+
   if (compactFields.length === 5 && compactFields[0] === 'BBV3') {
     const customerId = Number(compactFields[1])
     const serviceByCode = {
@@ -387,6 +451,9 @@ function App() {
   const [rewardForm, setRewardForm] = useState({ name: '', description: '', required_stamps: 10 })
   const [editingRewardId, setEditingRewardId] = useState(null)
   const [rewardModalOpen, setRewardModalOpen] = useState(false)
+  const [haircutStyles, setHaircutStyles] = useState([])
+  const [haircutForm, setHaircutForm] = useState({ name: '', image_data: '' })
+  const [haircutModalOpen, setHaircutModalOpen] = useState(false)
   const dataRefreshInFlightRef = useRef(null)
 
   const handleDetectedQr = useCallback((payload, scanControls) => {
@@ -426,7 +493,7 @@ function App() {
 
     const refresh = (async () => {
       try {
-        const [dashboard, customerRows, visitRows, barberRows, barberStatRows, rewardRows, redemptionRows] = await Promise.all([
+        const [dashboard, customerRows, visitRows, barberRows, barberStatRows, rewardRows, redemptionRows, haircutStyleRows] = await Promise.all([
           api.getDashboard(),
           api.getCustomers(),
           api.getVisits(),
@@ -434,6 +501,7 @@ function App() {
           api.getBarberStats(),
           api.getRewardTemplates(),
           api.getRewardRedemptions(),
+          api.getHaircutStyles(),
         ])
 
         setStats(dashboard)
@@ -443,6 +511,7 @@ function App() {
         setBarberStats(Array.isArray(barberStatRows) ? barberStatRows.map(normalizeBarberStats) : [])
         setRewardTemplates(Array.isArray(rewardRows) ? rewardRows : [])
         setRewardRedemptions(redemptionRows.map(normalizeRewardRedemption))
+        setHaircutStyles(Array.isArray(haircutStyleRows) ? haircutStyleRows : [])
         setLastRefreshedAt(new Date())
       } catch (err) {
         setError(err.message || 'Unable to load BarberBro data.')
@@ -1022,6 +1091,70 @@ function App() {
     }
   }
 
+  function openHaircutModal() {
+    setHaircutForm({ name: '', image_data: '' })
+    setError('')
+    setHaircutModalOpen(true)
+  }
+
+  async function handleHaircutImageChange(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setError('')
+    try {
+      const imageData = await prepareHaircutImage(file)
+      setHaircutForm((current) => ({ ...current, image_data: imageData }))
+    } catch (err) {
+      setError(err.message || 'Unable to process the selected image.')
+    }
+  }
+
+  async function saveHaircutStyle(event) {
+    event.preventDefault()
+    if (saving) return
+
+    const name = haircutForm.name.trim()
+    if (!name || !haircutForm.image_data) {
+      setError('Enter a hairstyle name and select a reference image.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      await api.addHaircutStyle({ name, image_data: haircutForm.image_data })
+      setHaircutModalOpen(false)
+      setHaircutForm({ name: '', image_data: '' })
+      setNotice(`${name} has been added to the hairstyle catalog.`)
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Failed to add hairstyle.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function removeHaircutStyle(style) {
+    if (!style || saving) return
+    if (!window.confirm(`Remove ${style.name} from the hairstyle catalog?`)) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      await api.deleteHaircutStyle(style.id)
+      setNotice(`${style.name} has been removed from the hairstyle catalog.`)
+      await loadData()
+    } catch (err) {
+      setError(err.message || 'Failed to remove hairstyle.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (!token) {
     return (
       <div className="admin-app admin-login-shell">
@@ -1101,6 +1234,7 @@ function App() {
             ['Customers', '♙'],
             ['Barbers', '✂'],
             ['Visit History', '◷'],
+            ['Haircut Styles', '✧'],
             ['Rewards', '✦'],
           ].map(([page, icon]) => (
             <button
@@ -1347,6 +1481,40 @@ function App() {
           </section>
         )}
 
+        {activePage === 'Haircut Styles' && !loading && (
+          <section className="admin-panel">
+            <div className="admin-panel-heading">
+              <div>
+                <h2>Hairstyle Reference Catalog</h2>
+                <p>Add styles and reference images for customers to choose when creating a visit ticket.</p>
+              </div>
+              <button className="admin-primary" onClick={openHaircutModal}>＋ Add Hairstyle</button>
+            </div>
+
+            {haircutStyles.length > 0 ? (
+              <div className="admin-hairstyle-grid">
+                {haircutStyles.map((style) => (
+                  <article className="admin-hairstyle-card" key={style.id}>
+                    <img src={style.image_data} alt={`${style.name} hairstyle reference`} />
+                    <div className="admin-hairstyle-card-footer">
+                      <strong>{style.name}</strong>
+                      <button
+                        className="admin-action-button admin-delete-button"
+                        disabled={saving}
+                        onClick={() => removeHaircutStyle(style)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="admin-empty">No custom hairstyles yet. Add one to make it available in the customer app.</p>
+            )}
+          </section>
+        )}
+
         {activePage === 'Rewards' && !loading && (
           <section className="admin-panel">
             <div className="admin-panel-heading">
@@ -1494,6 +1662,39 @@ function App() {
 
             <button className="admin-primary admin-confirm" type="submit" disabled={saving}>
               {saving ? 'Saving...' : editingRewardId ? 'Update Reward' : 'Save Reward'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {haircutModalOpen && (
+        <div className="admin-modal-backdrop" onClick={() => !saving && setHaircutModalOpen(false)}>
+          <form className="admin-modal" onSubmit={saveHaircutStyle} onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="admin-modal-close" disabled={saving} onClick={() => setHaircutModalOpen(false)}>×</button>
+            <p className="admin-eyebrow">CUSTOMER VISIT CATALOG</p>
+            <h2>Add Hairstyle</h2>
+            <label>Hairstyle name
+              <input
+                required
+                maxLength="120"
+                value={haircutForm.name}
+                onChange={(event) => setHaircutForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="e.g. Burst Fade"
+              />
+            </label>
+            <label>Reference image
+              <input type="file" accept="image/*" onChange={handleHaircutImageChange} />
+            </label>
+            <p className="admin-hairstyle-image-help">Images are resized before saving. Maximum saved size: 1.5 MB.</p>
+            {haircutForm.image_data && (
+              <img
+                className="admin-hairstyle-preview"
+                src={haircutForm.image_data}
+                alt="Selected hairstyle reference preview"
+              />
+            )}
+            <button className="admin-primary admin-confirm" type="submit" disabled={saving || !haircutForm.image_data}>
+              {saving ? 'Saving...' : 'Save Hairstyle'}
             </button>
           </form>
         </div>
